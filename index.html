@@ -111,9 +111,6 @@
             <button id="addGameBtn" type="button" class="tap-btn px-3 py-1.5 rounded-xl text-xs font-semibold bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/30">
               + Add Game
             </button>
-            <button id="finishSessionBtn" type="button" class="tap-btn px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-md shadow-emerald-950/50">
-              Save Session to Lifetime
-            </button>
           </div>
         </div>
 
@@ -208,6 +205,13 @@
             </tbody>
           </table>
         </div>
+      </div>
+
+      <!-- Bottom Creator-Only Close & Save Session Bar -->
+      <div id="finishSessionContainer" class="flex justify-end pt-1">
+        <button id="finishSessionBtn" type="button" class="tap-btn w-full sm:w-auto px-5 py-3 rounded-2xl text-sm font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-lg shadow-emerald-950/50">
+          Save Session to Lifetime &amp; Close Room
+        </button>
       </div>
 
     </section>
@@ -389,7 +393,7 @@
 
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
-    import { getDatabase, ref, set, onValue, off } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js';
+    import { getDatabase, ref, set, update, runTransaction, onValue, off } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js';
 
     const firebaseConfig = {
       apiKey: "AIzaSyBg3aCuhcIt99E9Ncy4Bn0gLOVpV1VfHCo",
@@ -410,6 +414,32 @@
     }
 
     const STORAGE_KEY = 'bowling_123_state_v3';
+    const MY_NAME_KEY = 'bowling_123_my_name_v1';
+    const CLIENT_ID_KEY = 'bowling_123_client_id_v1';
+
+    function getClientId() {
+      try {
+        let cid = localStorage.getItem(CLIENT_ID_KEY);
+        if (!cid) {
+          cid = 'c_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+          localStorage.setItem(CLIENT_ID_KEY, cid);
+        }
+        return cid;
+      } catch (e) {
+        return 'c_local';
+      }
+    }
+
+    function getDefaultDateSessionName() {
+      return new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    }
+
+    function getRememberedName() {
+      try { return localStorage.getItem(MY_NAME_KEY) || ''; } catch (e) { return ''; }
+    }
+    function setRememberedName(name) {
+      try { if (name) localStorage.setItem(MY_NAME_KEY, name); } catch (e) { /* ignore */ }
+    }
     const CHART_COLORS = [
       '#34d399', '#fbbf24', '#38bdf8', '#f472b6', '#a78bfa', '#fb7185', '#2dd4bf', '#facc15'
     ];
@@ -419,15 +449,12 @@
     }
 
     function defaultSession(sessionNum, roster) {
-      const defaultRoster = roster || [
-        { id: 'p1', name: 'Player 1' },
-        { id: 'p2', name: 'Player 2' },
-        { id: 'p3', name: 'Player 3' }
-      ];
+      const defaultRoster = Array.isArray(roster) ? roster : [];
       return {
         id: 'sess_' + Date.now(),
         sessionNumber: sessionNum,
-        name: `Session ${sessionNum}`,
+        name: getDefaultDateSessionName(),
+        creatorId: getClientId(),
         activeGameIndex: 0,
         roster: defaultRoster,
         games: [
@@ -440,7 +467,7 @@
       const sess = defaultSession(1);
       return {
         activeTab: 'live',
-        selectedPlayerId: sess.roster[0].id,
+        selectedPlayerId: sess.roster[0] ? sess.roster[0].id : null,
         settleScope: 'session',
         roomCode: '',
         currentSession: sess,
@@ -456,9 +483,15 @@
         if (!parsed || !parsed.currentSession || !Array.isArray(parsed.currentSession.games)) {
           return defaultState();
         }
+        const roster = Array.isArray(parsed.currentSession.roster) ? parsed.currentSession.roster : [];
+        parsed.currentSession.roster = roster;
+        parsed.currentSession.games = parsed.currentSession.games.map(g => ({
+          ...g,
+          players: Array.isArray(g.players) ? g.players : []
+        }));
         return {
           activeTab: parsed.activeTab || 'live',
-          selectedPlayerId: parsed.selectedPlayerId || (parsed.currentSession.roster[0] ? parsed.currentSession.roster[0].id : null),
+          selectedPlayerId: parsed.selectedPlayerId || (roster[0] ? roster[0].id : null),
           settleScope: parsed.settleScope || 'session',
           roomCode: parsed.roomCode || '',
           currentSession: parsed.currentSession,
@@ -476,6 +509,24 @@
     let activeRoomListener = null;
     let isApplyingRemote = false;
 
+    function updateConnectButton(variant) {
+      const btn = document.getElementById('joinRoomBtn');
+      if (!btn) return;
+      if (variant === 'live') {
+        btn.textContent = 'Connected';
+        btn.disabled = true;
+        btn.className = 'px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 cursor-default';
+      } else if (variant === 'connecting') {
+        btn.textContent = 'Connecting...';
+        btn.disabled = true;
+        btn.className = 'px-3 py-1.5 rounded-xl text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 cursor-wait';
+      } else {
+        btn.textContent = variant === 'error' ? 'Retry' : 'Connect';
+        btn.disabled = false;
+        btn.className = 'tap-btn px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-500 hover:bg-emerald-400 text-slate-950';
+      }
+    }
+
     function updateSyncBadge(text, variant) {
       const badge = document.getElementById('syncStatusBadge');
       badge.textContent = text;
@@ -489,6 +540,7 @@
       } else {
         badge.className += 'bg-slate-800 text-slate-300 border-slate-700';
       }
+      updateConnectButton(variant);
     }
 
     function saveState(syncToCloud = true) {
@@ -515,6 +567,66 @@
       }
     }
 
+    function handleFirebaseWriteError(err) {
+      console.error('Firebase write error:', err);
+      if (String(err).includes('PERMISSION_DENIED')) {
+        updateSyncBadge('Permission Denied (Check Rules)', 'error');
+        showToast('Firebase locked: update Realtime Database Rules to allow /rooms/$roomId');
+      } else {
+        updateSyncBadge('Sync Error', 'error');
+      }
+    }
+
+    function syncPlayerCounterDelta(gIdx, pIdx, field, delta) {
+      saveState(false);
+      if (!db || !state.roomCode || isApplyingRemote) return;
+      const fieldRef = ref(db, `rooms/${state.roomCode}/currentSession/games/${gIdx}/players/${pIdx}/${field}`);
+      runTransaction(fieldRef, (curr) => Math.max(0, (Number(curr) || 0) + delta))
+        .catch(handleFirebaseWriteError);
+    }
+
+    function syncPlayerPinfall(gIdx, pIdx, val) {
+      saveState(false);
+      if (!db || !state.roomCode || isApplyingRemote) return;
+      const fieldRef = ref(db, `rooms/${state.roomCode}/currentSession/games/${gIdx}/players/${pIdx}/pinfall`);
+      set(fieldRef, val).catch(handleFirebaseWriteError);
+    }
+
+    function syncSessionName(name) {
+      saveState(false);
+      if (!db || !state.roomCode || isApplyingRemote) return;
+      const nameRef = ref(db, `rooms/${state.roomCode}/currentSession/name`);
+      set(nameRef, name).catch(handleFirebaseWriteError);
+    }
+
+    function resolveLocalPlayerName() {
+      const inputEl = document.getElementById('newPlayerInput');
+      const typed = inputEl ? inputEl.value.trim() : '';
+      const remembered = getRememberedName().trim();
+      const name = typed || remembered || ('Bowler ' + Math.floor(100 + Math.random() * 900));
+      setRememberedName(name);
+      if (inputEl) inputEl.value = '';
+      return name;
+    }
+
+    function ensurePlayerInSessionObject(sess, playerName) {
+      sess.roster = Array.isArray(sess.roster) ? sess.roster : [];
+      sess.games = Array.isArray(sess.games) && sess.games.length > 0
+        ? sess.games.map(g => ({ ...g, players: Array.isArray(g.players) ? g.players : [] }))
+        : [{ gameNumber: 1, players: makeEmptyRosterPlayers(sess.roster) }];
+
+      const existing = sess.roster.find(p => p.name.trim().toLowerCase() === playerName.trim().toLowerCase());
+      if (existing) {
+        return { sess, playerId: existing.id, added: false };
+      }
+      const id = 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+      sess.roster.push({ id, name: playerName });
+      sess.games.forEach(g => {
+        g.players.push({ id, name: playerName, strikes: 0, pin10: 0, pinfall: '' });
+      });
+      return { sess, playerId: id, added: true };
+    }
+
     function connectToRoom(rawCode) {
       const code = String(rawCode || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
       if (!code) {
@@ -536,25 +648,42 @@
       updateSyncBadge(`Connecting: ${code}...`, 'connecting');
       saveState(false);
 
+      let hasAutoJoined = false;
+      const myName = resolveLocalPlayerName();
+
       activeRoomRef = ref(db, 'rooms/' + code);
       activeRoomListener = onValue(activeRoomRef, (snapshot) => {
         const data = snapshot.val();
         if (!data) {
-          // Room does not exist yet — seed it with current local session
+          // Room does not exist yet — mark this client as creator, add player, and seed room
+          hasAutoJoined = true;
+          state.currentSession.creatorId = getClientId();
+          const res = ensurePlayerInSessionObject(state.currentSession, myName);
+          state.currentSession = res.sess;
+          state.selectedPlayerId = res.playerId;
           updateSyncBadge(`Live: ${code}`, 'live');
           saveState(true);
-          showToast(`Created live room ${code}`);
+          renderAll();
+          showToast(`Created room ${code} as ${myName}`);
           return;
         }
         isApplyingRemote = true;
         try {
-          if (data.currentSession && Array.isArray(data.currentSession.games)) {
+          if (data.currentSession) {
             const keepSelected = state.selectedPlayerId;
-            state.currentSession = data.currentSession;
-            if (state.currentSession.roster && state.currentSession.roster.some(p => p.id === keepSelected)) {
+            const sess = data.currentSession;
+            sess.roster = Array.isArray(sess.roster) ? sess.roster : [];
+            sess.games = Array.isArray(sess.games) && sess.games.length > 0
+              ? sess.games.map(g => ({ ...g, players: Array.isArray(g.players) ? g.players : [] }))
+              : [{ gameNumber: 1, players: makeEmptyRosterPlayers(sess.roster) }];
+            state.currentSession = sess;
+            const myMatch = sess.roster.find(p => p.name.trim().toLowerCase() === myName.toLowerCase());
+            if (sess.roster.some(p => p.id === keepSelected)) {
               state.selectedPlayerId = keepSelected;
-            } else if (state.currentSession.roster && state.currentSession.roster[0]) {
-              state.selectedPlayerId = state.currentSession.roster[0].id;
+            } else if (myMatch) {
+              state.selectedPlayerId = myMatch.id;
+            } else {
+              state.selectedPlayerId = sess.roster[0] ? sess.roster[0].id : null;
             }
           }
           if (Array.isArray(data.sessionsHistory)) {
@@ -567,6 +696,26 @@
           renderAll();
         } finally {
           isApplyingRemote = false;
+        }
+
+        if (!hasAutoJoined) {
+          hasAutoJoined = true;
+          const alreadyIn = state.currentSession.roster.some(
+            p => p.name.trim().toLowerCase() === myName.toLowerCase()
+          );
+          if (!alreadyIn) {
+            const sessRef = ref(db, `rooms/${code}/currentSession`);
+            runTransaction(sessRef, (remoteSess) => {
+              const base = remoteSess || state.currentSession;
+              const res = ensurePlayerInSessionObject(base, myName);
+              state.selectedPlayerId = res.playerId;
+              return res.sess;
+            }).then(() => {
+              showToast(`Joined room ${code} as ${myName}`);
+            }).catch(handleFirebaseWriteError);
+          } else {
+            showToast(`Connected to room ${code} as ${myName}`);
+          }
         }
       }, (err) => {
         console.error('Firebase read error:', err);
@@ -895,7 +1044,9 @@
 
       // Live Game Scoreboard Table
       const tbody = document.getElementById('liveScoreboardBody');
-      tbody.innerHTML = computed.map(p => `
+      tbody.innerHTML = computed.length === 0
+        ? `<tr><td colspan="7" class="py-6 text-center text-slate-400">No players in this game yet. Add your name above to begin.</td></tr>`
+        : computed.map(p => `
         <tr class="hover:bg-slate-800/40 transition-colors ${p.id === state.selectedPlayerId ? 'bg-emerald-500/5' : ''}">
           <td class="py-3 px-4">
             <button type="button" data-select-player="${escapeHtml(p.id)}" class="font-semibold text-white hover:text-emerald-300 text-left">
@@ -930,6 +1081,17 @@
           <td class="py-3 px-4 text-right font-bold ${signedClass(p.netDiff)}">${formatSigned(p.netDiff)}</td>
         </tr>
       `).join('');
+
+      // Creator-only visibility for Save Session to Lifetime & Close Room
+      const finishContainer = document.getElementById('finishSessionContainer');
+      const finishBtn = document.getElementById('finishSessionBtn');
+      if (finishContainer && finishBtn) {
+        const isCreator = !state.roomCode || !sess.creatorId || sess.creatorId === getClientId();
+        finishContainer.classList.toggle('hidden', !isCreator);
+        finishBtn.textContent = state.roomCode
+          ? 'Save Session to Lifetime & Close Room'
+          : 'Save Session to Lifetime';
+      }
 
       // Session Cumulative Standings
       const sessCum = computeSessionCumulative(sess).sort((a, b) => b.netDiff - a.netDiff || b.totalPts - a.totalPts);
@@ -1233,15 +1395,42 @@
     }
 
     function renderAll() {
+      const activeEl = document.activeElement;
+      const focusedPinfallId = activeEl && activeEl.dataset ? activeEl.dataset.pinfallId : null;
+      const focusedIsMain = activeEl && activeEl.id === 'activePinfallInput';
+      const selStart = activeEl && typeof activeEl.selectionStart === 'number' ? activeEl.selectionStart : null;
+
       renderTabs();
       renderLiveTab();
       renderSettlementTab();
       if (state.activeTab === 'history') {
         renderHistoryTab();
       }
+
+      if (focusedPinfallId) {
+        const selector = focusedIsMain
+          ? '#activePinfallInput'
+          : `tbody#liveScoreboardBody [data-pinfall-id="${focusedPinfallId}"]`;
+        const restoreEl = document.querySelector(selector);
+        if (restoreEl) {
+          restoreEl.focus();
+          if (selStart !== null && restoreEl.setSelectionRange) {
+            try { restoreEl.setSelectionRange(selStart, selStart); } catch (e) { /* ignore for number input */ }
+          }
+        }
+      }
     }
 
     // --- Room Controls ---
+    document.getElementById('roomCodeInput').addEventListener('input', (e) => {
+      const typed = e.target.value.trim().toUpperCase();
+      if (state.roomCode && typed !== state.roomCode) {
+        updateConnectButton('local');
+      } else if (state.roomCode && typed === state.roomCode) {
+        updateConnectButton('live');
+      }
+    });
+
     document.getElementById('joinRoomBtn').addEventListener('click', () => {
       connectToRoom(document.getElementById('roomCodeInput').value);
     });
@@ -1280,8 +1469,9 @@
     });
 
     document.getElementById('sessionNameInput').addEventListener('input', (e) => {
-      state.currentSession.name = e.target.value || `Session ${state.currentSession.sessionNumber}`;
-      saveState(true);
+      const name = e.target.value || getDefaultDateSessionName();
+      state.currentSession.name = name;
+      syncSessionName(name);
       renderTabs();
     });
 
@@ -1312,6 +1502,7 @@
         g.players.push({ id, name, strikes: 0, pin10: 0, pinfall: '' });
       });
       state.selectedPlayerId = id;
+      setRememberedName(name);
       input.value = '';
       saveState(true);
       renderAll();
@@ -1347,6 +1538,8 @@
       const selectBtn = e.target.closest('[data-select-player]');
       if (selectBtn) {
         state.selectedPlayerId = selectBtn.dataset.selectPlayer;
+        const chosen = state.currentSession.roster.find(x => x.id === state.selectedPlayerId);
+        if (chosen) setRememberedName(chosen.name);
         saveState(false);
         renderLiveTab();
         return;
@@ -1374,13 +1567,27 @@
         const action = actionBtn.dataset.action;
         const id = actionBtn.dataset.id;
         const activeGame = getActiveGame();
-        const p = activeGame.players.find(x => x.id === id);
-        if (!p) return;
-        if (action === 'inc-strike') p.strikes += 1;
-        if (action === 'dec-strike') p.strikes = Math.max(0, p.strikes - 1);
-        if (action === 'inc-pin10') p.pin10 += 1;
-        if (action === 'dec-pin10') p.pin10 = Math.max(0, p.pin10 - 1);
-        saveState(true);
+        const gIdx = state.currentSession.activeGameIndex;
+        const pIdx = activeGame.players.findIndex(x => x.id === id);
+        if (pIdx === -1) return;
+        const p = activeGame.players[pIdx];
+        if (action === 'inc-strike') {
+          p.strikes += 1;
+          syncPlayerCounterDelta(gIdx, pIdx, 'strikes', 1);
+        } else if (action === 'dec-strike') {
+          if (p.strikes > 0) {
+            p.strikes -= 1;
+            syncPlayerCounterDelta(gIdx, pIdx, 'strikes', -1);
+          }
+        } else if (action === 'inc-pin10') {
+          p.pin10 += 1;
+          syncPlayerCounterDelta(gIdx, pIdx, 'pin10', 1);
+        } else if (action === 'dec-pin10') {
+          if (p.pin10 > 0) {
+            p.pin10 -= 1;
+            syncPlayerCounterDelta(gIdx, pIdx, 'pin10', -1);
+          }
+        }
         renderLiveTab();
         renderSettlementTab();
       }
@@ -1391,15 +1598,17 @@
       if (!input) return;
       const id = input.dataset.pinfallId;
       const activeGame = getActiveGame();
-      const p = activeGame.players.find(x => x.id === id);
-      if (!p) return;
+      const gIdx = state.currentSession.activeGameIndex;
+      const pIdx = activeGame.players.findIndex(x => x.id === id);
+      if (pIdx === -1) return;
+      const p = activeGame.players[pIdx];
       let val = input.value;
       if (val !== '') {
         const num = Math.max(0, Math.min(300, parseInt(val, 10) || 0));
         val = String(num);
       }
       p.pinfall = val;
-      saveState(true);
+      syncPlayerPinfall(gIdx, pIdx, val);
       document.querySelectorAll(`[data-pinfall-id="${id}"]`).forEach(el => {
         if (el !== input) el.value = val;
       });
@@ -1459,11 +1668,16 @@
           };
           state.sessionsHistory.push(archivedSession);
           const nextSessNum = sess.sessionNumber + 1;
-          state.currentSession = defaultSession(nextSessNum, sess.roster);
+          state.currentSession = defaultSession(nextSessNum);
+          state.selectedPlayerId = null;
           state.settleScope = 'session';
+          const wasInRoom = Boolean(state.roomCode);
           saveState(true);
+          if (wasInRoom) {
+            disconnectRoom();
+          }
           renderAll();
-          showToast(`Saved ${archivedSession.name} (${archivedSession.games.length} game${archivedSession.games.length > 1 ? 's' : ''})!`);
+          showToast(`Saved ${archivedSession.name} to Lifetime${wasInRoom ? ' & closed room' : ''}!`);
         }
       );
     });
@@ -1542,7 +1756,7 @@
       openConfirm('Clear All Lifetime History?', 'This will permanently erase all saved sessions and trends.', () => {
         state.sessionsHistory = [];
         state.currentSession.sessionNumber = 1;
-        state.currentSession.name = 'Session 1';
+        state.currentSession.name = getDefaultDateSessionName();
         saveState(true);
         renderAll();
         showToast('Lifetime history cleared');
@@ -1598,6 +1812,17 @@
       if (confirmCallback) confirmCallback();
       closeConfirm();
     });
+
+    // Pre-fill last used player name on this device if not yet in roster
+    const remembered = getRememberedName();
+    if (remembered) {
+      const existing = state.currentSession.roster.find(p => p.name.trim().toLowerCase() === remembered.trim().toLowerCase());
+      if (existing) {
+        state.selectedPlayerId = existing.id;
+      } else {
+        document.getElementById('newPlayerInput').value = remembered;
+      }
+    }
 
     // Initial render & auto-join room from URL or saved state
     renderAll();
