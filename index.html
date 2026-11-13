@@ -73,8 +73,46 @@
   <!-- Main Content -->
   <main class="flex-1 max-w-5xl w-full mx-auto px-4 py-5 space-y-5">
 
-    <!-- Live Cloud Room Sync Bar -->
-    <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 sm:p-4 flex flex-wrap items-center justify-between gap-3">
+    <!-- Google Account & Live Cloud Room Sync Bar -->
+    <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 sm:p-4 space-y-3">
+      <!-- Auth Row -->
+      <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800/80">
+        <div id="authSignedOutView" class="flex flex-wrap items-center justify-between gap-2 w-full">
+          <div class="text-xs text-slate-300">
+            <span class="font-semibold text-white">Google Sign-In</span> required for live cloud rooms &amp; fixed bowler identity.
+          </div>
+          <button id="googleSignInBtn" type="button" class="tap-btn px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-white hover:bg-slate-200 text-slate-900 flex items-center gap-2 shadow">
+            <span>Sign in with Google</span>
+          </button>
+        </div>
+
+        <div id="authSignedInView" class="hidden flex flex-wrap items-center justify-between gap-2 w-full">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <div id="authUserAvatar" class="w-7 h-7 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-xs font-bold text-emerald-300 shrink-0">G</div>
+            <div class="min-w-0">
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs text-slate-400">Bowler:</span>
+                <span id="authPlayerNameLabel" class="text-xs sm:text-sm font-bold text-white truncate"></span>
+                <button id="editFixedNameBtn" type="button" class="text-[11px] text-sky-400 hover:text-sky-300 underline ml-1">Edit</button>
+              </div>
+              <p id="authUserEmailLabel" class="text-[10px] text-slate-500 truncate"></p>
+            </div>
+          </div>
+          <button id="googleSignOutBtn" type="button" class="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700">
+            Sign Out
+          </button>
+        </div>
+
+        <form id="editFixedNameForm" class="hidden flex items-center gap-2 w-full pt-1">
+          <input id="fixedNameInput" type="text" maxlength="24" placeholder="Your fixed bowler name..."
+            class="flex-1 sm:max-w-xs px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-xs sm:text-sm text-white focus:outline-none focus:border-sky-400" />
+          <button type="submit" class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-sky-500 hover:bg-sky-400 text-slate-950">Save Name</button>
+          <button id="cancelFixedNameBtn" type="button" class="px-2.5 py-1.5 rounded-xl text-xs bg-slate-800 text-slate-300">Cancel</button>
+        </form>
+      </div>
+
+      <!-- Room Row -->
+      <div class="flex flex-wrap items-center justify-between gap-3">
       <div class="flex items-center gap-2 min-w-0">
         <span class="text-xs font-semibold uppercase tracking-wider text-emerald-400 shrink-0">Live Room:</span>
         <input id="roomCodeInput" type="text" maxlength="16" placeholder="e.g. BOWL1"
@@ -93,6 +131,7 @@
         <button id="disconnectRoomBtn" type="button" class="hidden px-2.5 py-1.5 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700">
           Leave Room
         </button>
+      </div>
       </div>
     </div>
 
@@ -393,7 +432,8 @@
 
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
-    import { getDatabase, ref, set, update, runTransaction, onValue, off } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js';
+    import { getDatabase, ref, set, get, update, runTransaction, onValue, off } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js';
+    import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 
     const firebaseConfig = {
       apiKey: "AIzaSyBg3aCuhcIt99E9Ncy4Bn0gLOVpV1VfHCo",
@@ -406,9 +446,16 @@
     };
 
     let db = null;
+    let auth = null;
+    let googleProvider = null;
+    let currentUser = null;
+    let fixedUserPlayerName = '';
+
     try {
       const fbApp = initializeApp(firebaseConfig);
       db = getDatabase(fbApp);
+      auth = getAuth(fbApp);
+      googleProvider = new GoogleAuthProvider();
     } catch (e) {
       console.warn('Firebase init failed:', e);
     }
@@ -418,6 +465,7 @@
     const CLIENT_ID_KEY = 'bowling_123_client_id_v1';
 
     function getClientId() {
+      if (currentUser && currentUser.uid) return currentUser.uid;
       try {
         let cid = localStorage.getItem(CLIENT_ID_KEY);
         if (!cid) {
@@ -600,6 +648,9 @@
     }
 
     function resolveLocalPlayerName() {
+      if (currentUser && fixedUserPlayerName) {
+        return fixedUserPlayerName;
+      }
       const inputEl = document.getElementById('newPlayerInput');
       const typed = inputEl ? inputEl.value.trim() : '';
       const remembered = getRememberedName().trim();
@@ -609,17 +660,19 @@
       return name;
     }
 
-    function ensurePlayerInSessionObject(sess, playerName) {
+    function ensurePlayerInSessionObject(sess, playerName, fixedId) {
       sess.roster = Array.isArray(sess.roster) ? sess.roster : [];
       sess.games = Array.isArray(sess.games) && sess.games.length > 0
         ? sess.games.map(g => ({ ...g, players: Array.isArray(g.players) ? g.players : [] }))
         : [{ gameNumber: 1, players: makeEmptyRosterPlayers(sess.roster) }];
 
-      const existing = sess.roster.find(p => p.name.trim().toLowerCase() === playerName.trim().toLowerCase());
+      const existingById = fixedId ? sess.roster.find(p => p.id === fixedId) : null;
+      const existingByName = sess.roster.find(p => p.name.trim().toLowerCase() === playerName.trim().toLowerCase());
+      const existing = existingById || existingByName;
       if (existing) {
         return { sess, playerId: existing.id, added: false };
       }
-      const id = 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+      const id = fixedId || ('p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6));
       sess.roster.push({ id, name: playerName });
       sess.games.forEach(g => {
         g.players.push({ id, name: playerName, strikes: 0, pin10: 0, pinfall: '' });
@@ -633,8 +686,12 @@
         showToast('Enter a room code (e.g. BOWL1)');
         return;
       }
-      if (!db) {
+      if (!db || !auth) {
         showToast('Firebase not available in this browser');
+        return;
+      }
+      if (!currentUser) {
+        showToast('Please sign in with Google first to join a live room');
         return;
       }
 
@@ -658,7 +715,8 @@
           // Room does not exist yet — mark this client as creator, add player, and seed room
           hasAutoJoined = true;
           state.currentSession.creatorId = getClientId();
-          const res = ensurePlayerInSessionObject(state.currentSession, myName);
+          const fixedUid = currentUser ? currentUser.uid : null;
+          const res = ensurePlayerInSessionObject(state.currentSession, myName, fixedUid);
           state.currentSession = res.sess;
           state.selectedPlayerId = res.playerId;
           updateSyncBadge(`Live: ${code}`, 'live');
@@ -707,7 +765,8 @@
             const sessRef = ref(db, `rooms/${code}/currentSession`);
             runTransaction(sessRef, (remoteSess) => {
               const base = remoteSess || state.currentSession;
-              const res = ensurePlayerInSessionObject(base, myName);
+              const fixedUid = currentUser ? currentUser.uid : null;
+              const res = ensurePlayerInSessionObject(base, myName, fixedUid);
               state.selectedPlayerId = res.playerId;
               return res.sess;
             }).then(() => {
@@ -1813,6 +1872,108 @@
       closeConfirm();
     });
 
+    // --- Google Auth & Fixed Bowler Name ---
+    function renderAuthUI() {
+      const outView = document.getElementById('authSignedOutView');
+      const inView = document.getElementById('authSignedInView');
+      if (currentUser) {
+        outView.classList.add('hidden');
+        inView.classList.remove('hidden');
+        const display = fixedUserPlayerName || currentUser.displayName || 'Bowler';
+        document.getElementById('authPlayerNameLabel').textContent = display;
+        document.getElementById('authUserEmailLabel').textContent = currentUser.email || '';
+        document.getElementById('authUserAvatar').textContent = display.slice(0, 1).toUpperCase();
+      } else {
+        outView.classList.remove('hidden');
+        inView.classList.add('hidden');
+        document.getElementById('editFixedNameForm').classList.add('hidden');
+      }
+    }
+
+    document.getElementById('googleSignInBtn').addEventListener('click', () => {
+      if (!auth || !googleProvider) {
+        showToast('Firebase Auth unavailable');
+        return;
+      }
+      signInWithPopup(auth, googleProvider).catch((err) => {
+        console.error('Google Sign-In error:', err);
+        showToast(err.code === 'auth/unauthorized-domain'
+          ? 'Add this domain to Firebase Auth → Authorized Domains'
+          : 'Google Sign-In failed: ' + (err.message || err.code));
+      });
+    });
+
+    document.getElementById('googleSignOutBtn').addEventListener('click', () => {
+      if (!auth) return;
+      if (state.roomCode) disconnectRoom();
+      signOut(auth).then(() => showToast('Signed out'));
+    });
+
+    document.getElementById('editFixedNameBtn').addEventListener('click', () => {
+      document.getElementById('fixedNameInput').value = fixedUserPlayerName || '';
+      document.getElementById('editFixedNameForm').classList.remove('hidden');
+      document.getElementById('fixedNameInput').focus();
+    });
+
+    document.getElementById('cancelFixedNameBtn').addEventListener('click', () => {
+      document.getElementById('editFixedNameForm').classList.add('hidden');
+    });
+
+    document.getElementById('editFixedNameForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const newName = document.getElementById('fixedNameInput').value.trim();
+      if (!newName || !currentUser || !db) return;
+      fixedUserPlayerName = newName;
+      setRememberedName(newName);
+      set(ref(db, `users/${currentUser.uid}/playerName`), newName).catch(handleFirebaseWriteError);
+      // Also update name in active room if present
+      const sess = state.currentSession;
+      const rIdx = sess.roster.findIndex(p => p.id === currentUser.uid);
+      if (rIdx !== -1) {
+        sess.roster[rIdx].name = newName;
+        sess.games.forEach(g => {
+          const gp = g.players.find(p => p.id === currentUser.uid);
+          if (gp) gp.name = newName;
+        });
+        saveState(true);
+      }
+      document.getElementById('editFixedNameForm').classList.add('hidden');
+      renderAuthUI();
+      renderAll();
+      showToast(`Fixed bowler name updated to ${newName}`);
+    });
+
+    if (auth) {
+      onAuthStateChanged(auth, async (user) => {
+        currentUser = user;
+        if (user && db) {
+          try {
+            const snap = await get(ref(db, `users/${user.uid}/playerName`));
+            if (snap.exists() && snap.val()) {
+              fixedUserPlayerName = String(snap.val());
+            } else {
+              fixedUserPlayerName = user.displayName || (user.email ? user.email.split('@')[0] : 'Bowler');
+              await set(ref(db, `users/${user.uid}/playerName`), fixedUserPlayerName);
+            }
+            setRememberedName(fixedUserPlayerName);
+          } catch (err) {
+            fixedUserPlayerName = user.displayName || getRememberedName() || 'Bowler';
+          }
+          renderAuthUI();
+          const urlRoom = new URLSearchParams(window.location.search).get('room');
+          if (urlRoom) {
+            connectToRoom(urlRoom);
+          } else if (state.roomCode) {
+            connectToRoom(state.roomCode);
+          }
+        } else {
+          fixedUserPlayerName = '';
+          renderAuthUI();
+        }
+        renderAll();
+      });
+    }
+
     // Pre-fill last used player name on this device if not yet in roster
     const remembered = getRememberedName();
     if (remembered) {
@@ -1829,9 +1990,7 @@
     const urlParams = new URLSearchParams(window.location.search);
     const urlRoom = urlParams.get('room');
     if (urlRoom) {
-      connectToRoom(urlRoom);
-    } else if (state.roomCode) {
-      connectToRoom(state.roomCode);
+      document.getElementById('roomCodeInput').value = urlRoom.toUpperCase();
     }
   </script>
 </body>
