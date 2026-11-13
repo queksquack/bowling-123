@@ -1,0 +1,1613 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>1-2-3 Bowling — Live Multi-Game Session &amp; Lifetime Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] }
+        }
+      }
+    };
+  </script>
+  <style>
+    body { font-family: 'Inter', system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }
+    .tap-btn { transition: transform 0.08s ease, background-color 0.15s ease; }
+    .tap-btn:active { transform: scale(0.96); }
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type="number"] { -moz-appearance: textfield; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
+
+  <!-- Top Header -->
+  <header class="sticky top-0 z-30 bg-slate-950/90 backdrop-blur border-b border-slate-800/80">
+    <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-2.5 min-w-0">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-950/50 shrink-0">
+          <span class="text-lg" aria-hidden="true">🎳</span>
+        </div>
+        <div class="min-w-0">
+          <h1 class="text-base sm:text-lg font-bold tracking-tight text-white truncate">1-2-3 Bowling</h1>
+          <p class="text-[11px] text-slate-400 truncate">1 PT Strike · 2 PT Pin 10 · 3 PT High Pinfall</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 shrink-0">
+        <span id="syncStatusBadge" class="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">
+          Local Mode
+        </span>
+        <span id="gameBadge" class="hidden sm:inline-block px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+          Session 1 · G1
+        </span>
+        <button id="rulesBtn" type="button" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">
+          Rules
+        </button>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <nav class="max-w-5xl mx-auto px-4 flex gap-1 border-t border-slate-900" aria-label="Main sections">
+      <button data-tab="live" class="tab-btn flex-1 py-2.5 text-xs sm:text-sm font-semibold border-b-2 border-emerald-400 text-emerald-400 transition-colors">
+        Live Session
+      </button>
+      <button data-tab="settlement" class="tab-btn flex-1 py-2.5 text-xs sm:text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition-colors">
+        ± Settlement
+      </button>
+      <button data-tab="history" class="tab-btn flex-1 py-2.5 text-xs sm:text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition-colors">
+        Lifetime &amp; Trends
+      </button>
+    </nav>
+  </header>
+
+  <!-- Main Content -->
+  <main class="flex-1 max-w-5xl w-full mx-auto px-4 py-5 space-y-5">
+
+    <!-- Live Cloud Room Sync Bar -->
+    <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 sm:p-4 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-2 min-w-0">
+        <span class="text-xs font-semibold uppercase tracking-wider text-emerald-400 shrink-0">Live Room:</span>
+        <input id="roomCodeInput" type="text" maxlength="16" placeholder="e.g. BOWL1"
+          class="w-28 sm:w-32 px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-xs sm:text-sm font-bold uppercase tracking-wider text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500" />
+        <button id="joinRoomBtn" type="button" class="tap-btn px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-500 hover:bg-emerald-400 text-slate-950">
+          Connect
+        </button>
+        <button id="newRoomBtn" type="button" class="px-2.5 py-1.5 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">
+          New Code
+        </button>
+      </div>
+      <div class="flex items-center gap-2">
+        <button id="copyRoomLinkBtn" type="button" class="px-3 py-1.5 rounded-xl text-xs font-medium bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 border border-sky-500/30">
+          Copy Invite Link
+        </button>
+        <button id="disconnectRoomBtn" type="button" class="hidden px-2.5 py-1.5 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700">
+          Leave Room
+        </button>
+      </div>
+    </div>
+
+    <!-- TAB 1: LIVE SESSION -->
+    <section id="tab-live" class="space-y-5">
+
+      <!-- Session & Multi-Game Switcher Bar -->
+      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center gap-2 flex-1 min-w-[200px]">
+            <label for="sessionNameInput" class="text-xs font-semibold uppercase tracking-wider text-slate-400 shrink-0">Session:</label>
+            <input id="sessionNameInput" type="text" maxlength="36" placeholder="Session name..."
+              class="flex-1 max-w-xs px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-sm font-semibold text-white focus:outline-none focus:border-emerald-500" />
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="addGameBtn" type="button" class="tap-btn px-3 py-1.5 rounded-xl text-xs font-semibold bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/30">
+              + Add Game
+            </button>
+            <button id="finishSessionBtn" type="button" class="tap-btn px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-md shadow-emerald-950/50">
+              Save Session to Lifetime
+            </button>
+          </div>
+        </div>
+
+        <!-- Game Tabs inside Current Session -->
+        <div class="flex items-center gap-2 overflow-x-auto pb-1" id="sessionGamesBar"></div>
+      </div>
+
+      <!-- Roster & Add Player Bar -->
+      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 class="text-sm font-semibold text-white">Players in <span id="liveSessionGameLabel">Session 1 · Game 1</span></h2>
+            <p class="text-xs text-slate-400">Select your own phone view below to tap strikes, Pin 10s, and your final game score.</p>
+          </div>
+          <form id="addPlayerForm" class="flex items-center gap-2 w-full sm:w-auto">
+            <input id="newPlayerInput" type="text" maxlength="24" placeholder="Add player name..."
+              class="flex-1 sm:w-44 px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500" />
+            <button type="submit" class="tap-btn px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-sm shrink-0">
+              + Add
+            </button>
+          </form>
+        </div>
+
+        <!-- Phone View Switcher -->
+        <div class="flex items-center gap-2 overflow-x-auto pb-1" id="phoneSwitcher"></div>
+      </div>
+
+      <!-- Active Phone Controller (Focused Single-Phone Experience) -->
+      <div id="phoneControllerContainer" class="bg-gradient-to-b from-slate-900 to-slate-900/80 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl">
+        <!-- Rendered dynamically -->
+      </div>
+
+      <!-- Live Game Scoreboard -->
+      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden">
+        <div class="px-4 py-3 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 class="text-sm font-semibold text-white">Game <span id="scoreboardGameNum">1</span> Scoreboard</h3>
+            <p class="text-xs text-slate-400">High Pinfall (+3 PT) updates automatically once game scores are entered.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="resetCurrentGameBtn" type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700">
+              Reset Game Counts
+            </button>
+            <button id="nextGameBtn" type="button" class="tap-btn px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold bg-sky-500 hover:bg-sky-400 text-slate-950">
+              Next Game →
+            </button>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-sm">
+            <thead>
+              <tr class="border-b border-slate-800 text-[11px] uppercase tracking-wider text-slate-400 bg-slate-950/50">
+                <th class="py-2.5 px-4">Player</th>
+                <th class="py-2.5 px-3 text-center">Strikes<br><span class="text-[10px] font-normal text-slate-500">(1 pt)</span></th>
+                <th class="py-2.5 px-3 text-center">Pin 10<br><span class="text-[10px] font-normal text-slate-500">(2 pt)</span></th>
+                <th class="py-2.5 px-3 text-center">Game Score<br><span class="text-[10px] font-normal text-slate-500">(0–300)</span></th>
+                <th class="py-2.5 px-3 text-center">High Pinfall<br><span class="text-[10px] font-normal text-slate-500">(+3 pt)</span></th>
+                <th class="py-2.5 px-3 text-right">Game Pts</th>
+                <th class="py-2.5 px-4 text-right">Game ±</th>
+              </tr>
+            </thead>
+            <tbody id="liveScoreboardBody" class="divide-y divide-slate-800/70">
+              <!-- Rendered dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Session Cumulative Summary Strip -->
+      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden">
+        <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+          <div>
+            <h3 class="text-sm font-semibold text-white">Session Cumulative Standings (<span id="sessionGameCountLabel">1</span> Game)</h3>
+            <p class="text-xs text-slate-400">Combined 1-2-3 points and net ± across all games in this session.</p>
+          </div>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs sm:text-sm">
+            <thead>
+              <tr class="border-b border-slate-800 text-[11px] uppercase tracking-wider text-slate-400 bg-slate-950/50">
+                <th class="py-2.5 px-4">Player</th>
+                <th class="py-2.5 px-3 text-center">Strikes</th>
+                <th class="py-2.5 px-3 text-center">Pin 10s</th>
+                <th class="py-2.5 px-3 text-center">Total Pinfall</th>
+                <th class="py-2.5 px-3 text-right">Session Pts</th>
+                <th class="py-2.5 px-4 text-right">Session Net ±</th>
+              </tr>
+            </thead>
+            <tbody id="sessionCumulativeBody" class="divide-y divide-slate-800/70">
+              <!-- Rendered dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- TAB 2: SETTLEMENT (±) -->
+    <section id="tab-settlement" class="hidden space-y-5">
+      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="text-base font-bold text-white"><span id="settleScopeTitle">Full Session</span> — ± Point Differences</h2>
+            <p class="text-xs text-slate-400">Pairwise zero-sum settlement across all players.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <select id="settleScopeSelect" class="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-xs sm:text-sm text-slate-200 focus:outline-none focus:border-emerald-500">
+              <option value="session">Full Session (All Games)</option>
+            </select>
+            <button id="copySettlementBtn" type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">
+              Copy Summary
+            </button>
+          </div>
+        </div>
+
+        <!-- Net ± Cards -->
+        <div id="settlementCards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <!-- Rendered dynamically -->
+        </div>
+      </div>
+
+      <!-- Pairwise Head-to-Head Matrix -->
+      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden">
+        <div class="px-4 py-3 border-b border-slate-800">
+          <h3 class="text-sm font-semibold text-white">Head-to-Head ± Matrix</h3>
+          <p class="text-xs text-slate-400">Read row vs. column: e.g. +3 means the row player finished 3 points ahead of the column player.</p>
+        </div>
+        <div class="overflow-x-auto">
+          <table id="pairwiseMatrixTable" class="w-full text-center border-collapse text-xs sm:text-sm">
+            <!-- Rendered dynamically -->
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: LIFETIME & TRENDS -->
+    <section id="tab-history" class="hidden space-y-5">
+
+      <!-- Summary KPI Strip -->
+      <div id="historyKpis" class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <!-- Rendered dynamically -->
+      </div>
+
+      <!-- Trends Chart -->
+      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 class="text-sm font-semibold text-white">Player Trends Over Games</h3>
+            <p class="text-xs text-slate-400">Track performance progression across all logged session games.</p>
+          </div>
+          <select id="trendMetricSelect" class="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-xs sm:text-sm text-slate-200 focus:outline-none focus:border-emerald-500">
+            <option value="totalPts">Total 1-2-3 Points</option>
+            <option value="cumNet">Cumulative Net ±</option>
+            <option value="pinfall">Bowling Game Score (Pinfall)</option>
+            <option value="strikes">Strikes Count</option>
+            <option value="pin10">Pin 10 Leaves Count</option>
+          </select>
+        </div>
+        <div class="relative h-72 w-full">
+          <canvas id="trendsChart"></canvas>
+          <div id="trendsEmptyState" class="hidden absolute inset-0 flex items-center justify-center text-center p-4">
+            <p class="text-sm text-slate-400">No saved sessions yet. Click <span class="text-emerald-400 font-medium">Save Session to Lifetime</span> in the Live Session tab to start tracking trends.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lifetime Leaderboard -->
+      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl overflow-hidden">
+        <div class="px-4 py-3 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 class="text-sm font-semibold text-white">Lifetime Leaderboard</h3>
+            <p class="text-xs text-slate-400">Aggregated across all saved sessions &amp; games.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="exportDataBtn" type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">
+              Export JSON
+            </button>
+            <label class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 cursor-pointer">
+              Import JSON
+              <input id="importDataInput" type="file" accept="application/json,.json" class="hidden" />
+            </label>
+            <button id="clearHistoryBtn" type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30">
+              Clear All
+            </button>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs sm:text-sm">
+            <thead>
+              <tr class="border-b border-slate-800 text-[11px] uppercase tracking-wider text-slate-400 bg-slate-950/50">
+                <th class="py-2.5 px-4">Player</th>
+                <th class="py-2.5 px-3 text-center">Games</th>
+                <th class="py-2.5 px-3 text-center">Total Pts</th>
+                <th class="py-2.5 px-3 text-center">Avg Pts</th>
+                <th class="py-2.5 px-3 text-center">Avg Pinfall</th>
+                <th class="py-2.5 px-3 text-center">High Game</th>
+                <th class="py-2.5 px-3 text-center">Strikes</th>
+                <th class="py-2.5 px-3 text-center">Pin 10s</th>
+                <th class="py-2.5 px-4 text-right">Lifetime ±</th>
+              </tr>
+            </thead>
+            <tbody id="lifetimeTableBody" class="divide-y divide-slate-800/70">
+              <!-- Rendered dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Logged Sessions Archive -->
+      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-3">
+        <h3 class="text-sm font-semibold text-white">Saved Sessions &amp; Games History</h3>
+        <div id="loggedGamesList" class="space-y-3">
+          <!-- Rendered dynamically -->
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Rules Modal -->
+  <div id="rulesModal" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl">
+      <div class="flex items-center justify-between">
+        <h3 class="text-base font-bold text-white">1-2-3 Bowling Rules</h3>
+        <button id="closeRulesBtn" type="button" class="text-slate-400 hover:text-white text-lg leading-none px-2">&times;</button>
+      </div>
+      <div class="space-y-2.5 text-sm text-slate-300">
+        <div class="flex items-start gap-2.5 bg-slate-950/70 p-3 rounded-xl border border-slate-800">
+          <span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold text-xs shrink-0">1 PT</span>
+          <p>Earned for every <strong>Strike</strong> rolled during a game.</p>
+        </div>
+        <div class="flex items-start gap-2.5 bg-slate-950/70 p-3 rounded-xl border border-slate-800">
+          <span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold text-xs shrink-0">2 PT</span>
+          <p>Earned for every <strong>Pin 10 Leave</strong> during a game.</p>
+        </div>
+        <div class="flex items-start gap-2.5 bg-slate-950/70 p-3 rounded-xl border border-slate-800">
+          <span class="px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 font-bold text-xs shrink-0">3 PT</span>
+          <p>Awarded at the end of each game to the player(s) with the <strong>highest game score (pinfall)</strong>.</p>
+        </div>
+        <p class="text-xs text-slate-400 pt-1">
+          Enter a <strong>Live Room</strong> code at the top and tap <strong>Copy Invite Link</strong> so every player can join from their own phone and sync live via Firebase Realtime Database.
+        </p>
+      </div>
+      <button id="closeRulesFooterBtn" type="button" class="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-sm">
+        Got it
+      </button>
+    </div>
+  </div>
+
+  <!-- Confirmation Modal -->
+  <div id="confirmModal" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
+      <h3 id="confirmTitle" class="text-base font-bold text-white">Confirm Action</h3>
+      <p id="confirmMessage" class="text-sm text-slate-300"></p>
+      <div class="flex items-center justify-end gap-2">
+        <button id="confirmCancelBtn" type="button" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium">
+          Cancel
+        </button>
+        <button id="confirmOkBtn" type="button" class="px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-400 text-white text-sm font-semibold">
+          Confirm
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="pointer-events-none fixed bottom-5 left-1/2 -translate-x-1/2 z-50 opacity-0 transition-opacity duration-200">
+    <div id="toastInner" class="px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs sm:text-sm font-medium shadow-xl"></div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
+    import { getDatabase, ref, set, onValue, off } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js';
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyBg3aCuhcIt99E9Ncy4Bn0gLOVpV1VfHCo",
+      authDomain: "bowling-123.firebaseapp.com",
+      databaseURL: "https://bowling-123-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "bowling-123",
+      storageBucket: "bowling-123.firebasestorage.app",
+      messagingSenderId: "548700965685",
+      appId: "1:548700965685:web:1819e3fa9c895a5d26da7c"
+    };
+
+    let db = null;
+    try {
+      const fbApp = initializeApp(firebaseConfig);
+      db = getDatabase(fbApp);
+    } catch (e) {
+      console.warn('Firebase init failed:', e);
+    }
+
+    const STORAGE_KEY = 'bowling_123_state_v3';
+    const CHART_COLORS = [
+      '#34d399', '#fbbf24', '#38bdf8', '#f472b6', '#a78bfa', '#fb7185', '#2dd4bf', '#facc15'
+    ];
+
+    function makeEmptyRosterPlayers(roster) {
+      return roster.map(r => ({ id: r.id, name: r.name, strikes: 0, pin10: 0, pinfall: '' }));
+    }
+
+    function defaultSession(sessionNum, roster) {
+      const defaultRoster = roster || [
+        { id: 'p1', name: 'Player 1' },
+        { id: 'p2', name: 'Player 2' },
+        { id: 'p3', name: 'Player 3' }
+      ];
+      return {
+        id: 'sess_' + Date.now(),
+        sessionNumber: sessionNum,
+        name: `Session ${sessionNum}`,
+        activeGameIndex: 0,
+        roster: defaultRoster,
+        games: [
+          { gameNumber: 1, players: makeEmptyRosterPlayers(defaultRoster) }
+        ]
+      };
+    }
+
+    function defaultState() {
+      const sess = defaultSession(1);
+      return {
+        activeTab: 'live',
+        selectedPlayerId: sess.roster[0].id,
+        settleScope: 'session',
+        roomCode: '',
+        currentSession: sess,
+        sessionsHistory: []
+      };
+    }
+
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return defaultState();
+        const parsed = JSON.parse(raw);
+        if (!parsed || !parsed.currentSession || !Array.isArray(parsed.currentSession.games)) {
+          return defaultState();
+        }
+        return {
+          activeTab: parsed.activeTab || 'live',
+          selectedPlayerId: parsed.selectedPlayerId || (parsed.currentSession.roster[0] ? parsed.currentSession.roster[0].id : null),
+          settleScope: parsed.settleScope || 'session',
+          roomCode: parsed.roomCode || '',
+          currentSession: parsed.currentSession,
+          sessionsHistory: Array.isArray(parsed.sessionsHistory) ? parsed.sessionsHistory : []
+        };
+      } catch (e) {
+        return defaultState();
+      }
+    }
+
+    let state = loadState();
+    let trendsChartInstance = null;
+    let confirmCallback = null;
+    let activeRoomRef = null;
+    let activeRoomListener = null;
+    let isApplyingRemote = false;
+
+    function updateSyncBadge(text, variant) {
+      const badge = document.getElementById('syncStatusBadge');
+      badge.textContent = text;
+      badge.className = 'px-2.5 py-1 rounded-full text-[11px] font-semibold border ';
+      if (variant === 'live') {
+        badge.className += 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30';
+      } else if (variant === 'error') {
+        badge.className += 'bg-rose-500/15 text-rose-300 border-rose-500/30';
+      } else if (variant === 'connecting') {
+        badge.className += 'bg-amber-500/15 text-amber-300 border-amber-500/30';
+      } else {
+        badge.className += 'bg-slate-800 text-slate-300 border-slate-700';
+      }
+    }
+
+    function saveState(syncToCloud = true) {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      } catch (e) { /* ignore */ }
+
+      if (syncToCloud && !isApplyingRemote && db && state.roomCode) {
+        const roomRef = ref(db, 'rooms/' + state.roomCode);
+        const payload = {
+          currentSession: state.currentSession,
+          sessionsHistory: state.sessionsHistory,
+          updatedAt: Date.now()
+        };
+        set(roomRef, payload).catch((err) => {
+          console.error('Firebase write error:', err);
+          if (String(err).includes('PERMISSION_DENIED')) {
+            updateSyncBadge('Permission Denied (Check Rules)', 'error');
+            showToast('Firebase locked: update Realtime Database Rules to allow /rooms/$roomId');
+          } else {
+            updateSyncBadge('Sync Error', 'error');
+          }
+        });
+      }
+    }
+
+    function connectToRoom(rawCode) {
+      const code = String(rawCode || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+      if (!code) {
+        showToast('Enter a room code (e.g. BOWL1)');
+        return;
+      }
+      if (!db) {
+        showToast('Firebase not available in this browser');
+        return;
+      }
+
+      if (activeRoomRef && activeRoomListener) {
+        off(activeRoomRef, 'value', activeRoomListener);
+      }
+
+      state.roomCode = code;
+      document.getElementById('roomCodeInput').value = code;
+      document.getElementById('disconnectRoomBtn').classList.remove('hidden');
+      updateSyncBadge(`Connecting: ${code}...`, 'connecting');
+      saveState(false);
+
+      activeRoomRef = ref(db, 'rooms/' + code);
+      activeRoomListener = onValue(activeRoomRef, (snapshot) => {
+        const data = snapshot.val();
+        if (!data) {
+          // Room does not exist yet — seed it with current local session
+          updateSyncBadge(`Live: ${code}`, 'live');
+          saveState(true);
+          showToast(`Created live room ${code}`);
+          return;
+        }
+        isApplyingRemote = true;
+        try {
+          if (data.currentSession && Array.isArray(data.currentSession.games)) {
+            const keepSelected = state.selectedPlayerId;
+            state.currentSession = data.currentSession;
+            if (state.currentSession.roster && state.currentSession.roster.some(p => p.id === keepSelected)) {
+              state.selectedPlayerId = keepSelected;
+            } else if (state.currentSession.roster && state.currentSession.roster[0]) {
+              state.selectedPlayerId = state.currentSession.roster[0].id;
+            }
+          }
+          if (Array.isArray(data.sessionsHistory)) {
+            state.sessionsHistory = data.sessionsHistory;
+          } else if (data.sessionsHistory === undefined) {
+            state.sessionsHistory = state.sessionsHistory || [];
+          }
+          saveState(false);
+          updateSyncBadge(`Live: ${code}`, 'live');
+          renderAll();
+        } finally {
+          isApplyingRemote = false;
+        }
+      }, (err) => {
+        console.error('Firebase read error:', err);
+        updateSyncBadge('Permission Denied (Check Rules)', 'error');
+        showToast('Firebase blocked read: update Realtime Database Rules');
+      });
+    }
+
+    function disconnectRoom() {
+      if (activeRoomRef && activeRoomListener) {
+        off(activeRoomRef, 'value', activeRoomListener);
+      }
+      activeRoomRef = null;
+      activeRoomListener = null;
+      state.roomCode = '';
+      document.getElementById('roomCodeInput').value = '';
+      document.getElementById('disconnectRoomBtn').classList.add('hidden');
+      updateSyncBadge('Local Mode', 'local');
+      saveState(false);
+      showToast('Left live room (switched to Local Mode)');
+    }
+
+    // --- Scoring Logic ---
+    function computeGameMetrics(players) {
+      const list = Array.isArray(players) ? players : [];
+      const validScores = list
+        .map(p => (p.pinfall === '' || p.pinfall === null || p.pinfall === undefined || isNaN(Number(p.pinfall))) ? null : Number(p.pinfall))
+        .filter(v => v !== null);
+
+      const maxPinfall = validScores.length > 0 ? Math.max(...validScores) : null;
+      const anyScoreEntered = validScores.length > 0;
+
+      const computed = list.map(p => {
+        const scoreNum = (p.pinfall === '' || p.pinfall === null || p.pinfall === undefined || isNaN(Number(p.pinfall))) ? null : Number(p.pinfall);
+        const isHighPinfall = anyScoreEntered && scoreNum !== null && scoreNum === maxPinfall && maxPinfall > 0;
+        const strikePts = (Number(p.strikes) || 0) * 1;
+        const pin10Pts = (Number(p.pin10) || 0) * 2;
+        const highPinfallPts = isHighPinfall ? 3 : 0;
+        const totalPts = strikePts + pin10Pts + highPinfallPts;
+        return {
+          ...p,
+          pinfall: p.pinfall ?? '',
+          scoreNum,
+          isHighPinfall,
+          strikePts,
+          pin10Pts,
+          highPinfallPts,
+          totalPts
+        };
+      });
+
+      const totalGroupPts = computed.reduce((sum, p) => sum + p.totalPts, 0);
+      const n = computed.length;
+
+      return computed.map(p => ({
+        ...p,
+        netDiff: (n * p.totalPts) - totalGroupPts
+      }));
+    }
+
+    function computeSessionCumulative(session) {
+      const map = new Map();
+      (session.roster || []).forEach(r => {
+        map.set(r.id, {
+          id: r.id,
+          name: r.name,
+          strikes: 0,
+          pin10: 0,
+          totalPinfall: 0,
+          pinfallGames: 0,
+          highPinfallPts: 0,
+          totalPts: 0,
+          netDiff: 0
+        });
+      });
+
+      (session.games || []).forEach(g => {
+        const gm = computeGameMetrics(g.players);
+        gm.forEach(p => {
+          if (!map.has(p.id)) {
+            map.set(p.id, {
+              id: p.id,
+              name: p.name,
+              strikes: 0,
+              pin10: 0,
+              totalPinfall: 0,
+              pinfallGames: 0,
+              highPinfallPts: 0,
+              totalPts: 0,
+              netDiff: 0
+            });
+          }
+          const agg = map.get(p.id);
+          agg.strikes += Number(p.strikes) || 0;
+          agg.pin10 += Number(p.pin10) || 0;
+          if (p.scoreNum !== null) {
+            agg.totalPinfall += p.scoreNum;
+            agg.pinfallGames += 1;
+          }
+          agg.highPinfallPts += p.highPinfallPts;
+          agg.totalPts += p.totalPts;
+          agg.netDiff += p.netDiff;
+        });
+      });
+
+      return Array.from(map.values());
+    }
+
+    function getActiveGame() {
+      const sess = state.currentSession;
+      if (sess.activeGameIndex < 0 || sess.activeGameIndex >= sess.games.length) {
+        sess.activeGameIndex = 0;
+      }
+      return sess.games[sess.activeGameIndex];
+    }
+
+    function formatSigned(val) {
+      if (val > 0) return `+${val}`;
+      if (val < 0) return `${val}`;
+      return '±0';
+    }
+
+    function signedClass(val) {
+      if (val > 0) return 'text-emerald-400';
+      if (val < 0) return 'text-rose-400';
+      return 'text-slate-400';
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    // --- Toast & Modal Helpers ---
+    let toastTimer = null;
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      const inner = document.getElementById('toastInner');
+      inner.textContent = msg;
+      toast.classList.remove('opacity-0');
+      toast.classList.add('opacity-100');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        toast.classList.remove('opacity-100');
+        toast.classList.add('opacity-0');
+      }, 2600);
+    }
+
+    function openConfirm(title, message, onConfirm) {
+      document.getElementById('confirmTitle').textContent = title;
+      document.getElementById('confirmMessage').textContent = message;
+      confirmCallback = onConfirm;
+      document.getElementById('confirmModal').classList.remove('hidden');
+    }
+
+    function closeConfirm() {
+      confirmCallback = null;
+      document.getElementById('confirmModal').classList.add('hidden');
+    }
+
+    // --- Rendering ---
+    function renderTabs() {
+      const sess = state.currentSession;
+      const activeGame = getActiveGame();
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        const isActive = btn.dataset.tab === state.activeTab;
+        btn.classList.toggle('border-emerald-400', isActive);
+        btn.classList.toggle('text-emerald-400', isActive);
+        btn.classList.toggle('border-transparent', !isActive);
+        btn.classList.toggle('text-slate-400', !isActive);
+      });
+      document.getElementById('tab-live').classList.toggle('hidden', state.activeTab !== 'live');
+      document.getElementById('tab-settlement').classList.toggle('hidden', state.activeTab !== 'settlement');
+      document.getElementById('tab-history').classList.toggle('hidden', state.activeTab !== 'history');
+
+      document.getElementById('gameBadge').textContent = `${sess.name} · G${activeGame.gameNumber}`;
+      document.getElementById('liveSessionGameLabel').textContent = `${sess.name} · Game ${activeGame.gameNumber}`;
+      document.getElementById('scoreboardGameNum').textContent = activeGame.gameNumber;
+      document.getElementById('sessionGameCountLabel').textContent = sess.games.length;
+    }
+
+    function renderLiveTab() {
+      const sess = state.currentSession;
+      const activeGame = getActiveGame();
+      const computed = computeGameMetrics(activeGame.players);
+
+      const sessionNameInput = document.getElementById('sessionNameInput');
+      if (document.activeElement !== sessionNameInput) {
+        sessionNameInput.value = sess.name;
+      }
+
+      // Session Games Bar
+      const gamesBar = document.getElementById('sessionGamesBar');
+      gamesBar.innerHTML = sess.games.map((g, idx) => {
+        const isActive = idx === sess.activeGameIndex;
+        const totalPtsInGame = computeGameMetrics(g.players).reduce((s, p) => s + p.totalPts, 0);
+        return `
+          <div class="shrink-0 inline-flex items-center rounded-xl border overflow-hidden ${
+            isActive ? 'bg-sky-500/20 border-sky-400 text-sky-200' : 'bg-slate-950 border-slate-800 text-slate-300'
+          }">
+            <button type="button" data-select-game="${idx}" class="px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5">
+              <span>Game ${g.gameNumber}</span>
+              <span class="px-1.5 py-0.5 rounded bg-slate-900/90 text-[10px] text-slate-300">${totalPtsInGame} pt</span>
+            </button>
+            ${sess.games.length > 1 ? `
+              <button type="button" data-remove-game="${idx}" title="Remove Game ${g.gameNumber}" class="px-2 py-1.5 text-xs text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 border-l border-slate-800/80">
+                &times;
+              </button>
+            ` : ''}
+          </div>
+        `;
+      }).join('');
+
+      if (!sess.roster.some(p => p.id === state.selectedPlayerId) && sess.roster.length > 0) {
+        state.selectedPlayerId = sess.roster[0].id;
+      }
+
+      // Phone switcher pills
+      const switcher = document.getElementById('phoneSwitcher');
+      switcher.innerHTML = computed.map(p => {
+        const active = p.id === state.selectedPlayerId;
+        return `
+          <button type="button" data-select-player="${escapeHtml(p.id)}"
+            class="tap-btn shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold border flex items-center gap-1.5 ${
+              active
+                ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
+                : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+            }">
+            <span>📱 ${escapeHtml(p.name)}</span>
+            <span class="px-1.5 py-0.5 rounded bg-slate-900 text-[10px] text-slate-300">${p.totalPts} pt</span>
+          </button>
+        `;
+      }).join('');
+
+      // Focused Phone Controller
+      const activePlayer = computed.find(p => p.id === state.selectedPlayerId);
+      const controller = document.getElementById('phoneControllerContainer');
+
+      if (!activePlayer) {
+        controller.innerHTML = `<p class="text-sm text-slate-400 text-center py-6">Add at least one player above to start scoring.</p>`;
+      } else {
+        controller.innerHTML = `
+          <div class="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-800">
+            <div class="flex items-center gap-2.5">
+              <div class="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-base font-bold text-emerald-400">
+                ${escapeHtml(activePlayer.name.slice(0, 2).toUpperCase())}
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <h3 class="text-base font-bold text-white">${escapeHtml(activePlayer.name)}'s Phone <span class="text-xs font-normal text-slate-400">(Game ${activeGame.gameNumber})</span></h3>
+                  ${activePlayer.isHighPinfall ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30">HIGH PINFALL +3 PT</span>` : ''}
+                </div>
+                <p class="text-xs text-slate-400">Game Total: <strong class="text-white">${activePlayer.totalPts} pts</strong> · Game Net <strong class="${signedClass(activePlayer.netDiff)}">${formatSigned(activePlayer.netDiff)}</strong></p>
+              </div>
+            </div>
+            ${sess.roster.length > 1 ? `
+              <button type="button" data-remove-player="${escapeHtml(activePlayer.id)}" class="px-2.5 py-1 rounded-lg text-xs text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/30">
+                Remove Player
+              </button>
+            ` : ''}
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-4">
+            <div class="bg-slate-950/70 border border-slate-800 rounded-2xl p-3.5 flex flex-col justify-between gap-3">
+              <div class="flex items-center justify-between">
+                <div>
+                  <span class="text-xs font-semibold uppercase tracking-wider text-emerald-400">Strike</span>
+                  <p class="text-[11px] text-slate-400">+1 PT each</p>
+                </div>
+                <span class="text-2xl font-extrabold text-white">${activePlayer.strikes}</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <button type="button" data-action="dec-strike" data-id="${escapeHtml(activePlayer.id)}"
+                  class="tap-btn w-12 h-12 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-lg border border-slate-700">
+                  −
+                </button>
+                <button type="button" data-action="inc-strike" data-id="${escapeHtml(activePlayer.id)}"
+                  class="tap-btn flex-1 h-12 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-950/50">
+                  + Strike (1 pt)
+                </button>
+              </div>
+            </div>
+
+            <div class="bg-slate-950/70 border border-slate-800 rounded-2xl p-3.5 flex flex-col justify-between gap-3">
+              <div class="flex items-center justify-between">
+                <div>
+                  <span class="text-xs font-semibold uppercase tracking-wider text-amber-400">Pin 10 Leave</span>
+                  <p class="text-[11px] text-slate-400">+2 PT each</p>
+                </div>
+                <span class="text-2xl font-extrabold text-white">${activePlayer.pin10}</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <button type="button" data-action="dec-pin10" data-id="${escapeHtml(activePlayer.id)}"
+                  class="tap-btn w-12 h-12 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-lg border border-slate-700">
+                  −
+                </button>
+                <button type="button" data-action="inc-pin10" data-id="${escapeHtml(activePlayer.id)}"
+                  class="tap-btn flex-1 h-12 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-sm shadow-lg shadow-amber-950/40">
+                  + Pin 10 (2 pt)
+                </button>
+              </div>
+            </div>
+
+            <div class="bg-slate-950/70 border border-slate-800 rounded-2xl p-3.5 flex flex-col justify-between gap-3">
+              <div class="flex items-center justify-between">
+                <div>
+                  <span class="text-xs font-semibold uppercase tracking-wider text-sky-400">Final Game Score</span>
+                  <p class="text-[11px] text-slate-400">Highest gets +3 PT</p>
+                </div>
+                <span class="text-xs font-semibold ${activePlayer.isHighPinfall ? 'text-sky-300' : 'text-slate-500'}">
+                  ${activePlayer.isHighPinfall ? '+3 PT' : '0 PT'}
+                </span>
+              </div>
+              <input id="activePinfallInput" type="number" min="0" max="300" inputmode="numeric"
+                value="${escapeHtml(activePlayer.pinfall)}" placeholder="Enter score (0–300)"
+                data-pinfall-id="${escapeHtml(activePlayer.id)}"
+                class="w-full h-12 px-3.5 rounded-xl bg-slate-900 border border-slate-700 text-center text-lg font-bold text-white placeholder-slate-500 focus:outline-none focus:border-sky-400" />
+            </div>
+          </div>
+        `;
+      }
+
+      // Live Game Scoreboard Table
+      const tbody = document.getElementById('liveScoreboardBody');
+      tbody.innerHTML = computed.map(p => `
+        <tr class="hover:bg-slate-800/40 transition-colors ${p.id === state.selectedPlayerId ? 'bg-emerald-500/5' : ''}">
+          <td class="py-3 px-4">
+            <button type="button" data-select-player="${escapeHtml(p.id)}" class="font-semibold text-white hover:text-emerald-300 text-left">
+              ${escapeHtml(p.name)}
+            </button>
+          </td>
+          <td class="py-3 px-3 text-center">
+            <div class="inline-flex items-center gap-1.5">
+              <button type="button" data-action="dec-strike" data-id="${escapeHtml(p.id)}" class="w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold">−</button>
+              <span class="w-6 text-center font-semibold">${p.strikes}</span>
+              <button type="button" data-action="inc-strike" data-id="${escapeHtml(p.id)}" class="w-6 h-6 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs font-bold">+</button>
+            </div>
+          </td>
+          <td class="py-3 px-3 text-center">
+            <div class="inline-flex items-center gap-1.5">
+              <button type="button" data-action="dec-pin10" data-id="${escapeHtml(p.id)}" class="w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold">−</button>
+              <span class="w-6 text-center font-semibold">${p.pin10}</span>
+              <button type="button" data-action="inc-pin10" data-id="${escapeHtml(p.id)}" class="w-6 h-6 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-bold">+</button>
+            </div>
+          </td>
+          <td class="py-3 px-3 text-center">
+            <input type="number" min="0" max="300" inputmode="numeric" placeholder="—"
+              value="${escapeHtml(p.pinfall)}" data-pinfall-id="${escapeHtml(p.id)}"
+              class="w-16 px-2 py-1 rounded-lg bg-slate-950 border border-slate-700 text-center text-sm font-semibold text-white focus:outline-none focus:border-sky-400" />
+          </td>
+          <td class="py-3 px-3 text-center">
+            ${p.isHighPinfall
+              ? `<span class="inline-block px-2 py-0.5 rounded-full text-xs font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30">+3</span>`
+              : `<span class="text-slate-600">—</span>`}
+          </td>
+          <td class="py-3 px-3 text-right font-bold text-white">${p.totalPts}</td>
+          <td class="py-3 px-4 text-right font-bold ${signedClass(p.netDiff)}">${formatSigned(p.netDiff)}</td>
+        </tr>
+      `).join('');
+
+      // Session Cumulative Standings
+      const sessCum = computeSessionCumulative(sess).sort((a, b) => b.netDiff - a.netDiff || b.totalPts - a.totalPts);
+      document.getElementById('sessionCumulativeBody').innerHTML = sessCum.map(p => `
+        <tr class="hover:bg-slate-800/40">
+          <td class="py-2.5 px-4 font-semibold text-white">${escapeHtml(p.name)}</td>
+          <td class="py-2.5 px-3 text-center text-emerald-300">${p.strikes}</td>
+          <td class="py-2.5 px-3 text-center text-amber-300">${p.pin10}</td>
+          <td class="py-2.5 px-3 text-center text-slate-300">${p.pinfallGames > 0 ? p.totalPinfall : '—'}</td>
+          <td class="py-2.5 px-3 text-right font-bold text-white">${p.totalPts}</td>
+          <td class="py-2.5 px-4 text-right font-extrabold ${signedClass(p.netDiff)}">${formatSigned(p.netDiff)}</td>
+        </tr>
+      `).join('');
+    }
+
+    function renderSettlementTab() {
+      const sess = state.currentSession;
+      const scopeSelect = document.getElementById('settleScopeSelect');
+
+      const opts = [
+        `<option value="session">Full ${escapeHtml(sess.name)} (${sess.games.length} Game${sess.games.length > 1 ? 's' : ''})</option>`,
+        ...sess.games.map((g, idx) => `<option value="game_${idx}">Game ${g.gameNumber} Only</option>`)
+      ];
+      scopeSelect.innerHTML = opts.join('');
+      if (state.settleScope !== 'session' && !sess.games[Number(state.settleScope.replace('game_', ''))]) {
+        state.settleScope = 'session';
+      }
+      scopeSelect.value = state.settleScope;
+
+      let rows = [];
+      let title = '';
+      if (state.settleScope === 'session') {
+        title = `${sess.name} (${sess.games.length} Game${sess.games.length > 1 ? 's' : ''})`;
+        rows = computeSessionCumulative(sess).sort((a, b) => b.totalPts - a.totalPts);
+      } else {
+        const gIdx = Number(state.settleScope.replace('game_', '')) || 0;
+        const g = sess.games[gIdx] || sess.games[0];
+        title = `${sess.name} · Game ${g.gameNumber}`;
+        rows = computeGameMetrics(g.players).sort((a, b) => b.totalPts - a.totalPts);
+      }
+
+      document.getElementById('settleScopeTitle').textContent = title;
+
+      const cards = document.getElementById('settlementCards');
+      cards.innerHTML = rows.map((p, idx) => `
+        <div class="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 flex items-center justify-between gap-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-bold text-slate-500">#${idx + 1}</span>
+              <span class="font-bold text-white">${escapeHtml(p.name)}</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-1">
+              ${p.strikes} Strike (${p.strikes * 1}) · ${p.pin10} Pin 10 (${p.pin10 * 2}) · High (${p.highPinfallPts})
+            </p>
+            <p class="text-xs text-slate-400 mt-0.5">
+              ${state.settleScope === 'session'
+                ? `Total Pinfall: <strong class="text-slate-200">${p.pinfallGames > 0 ? p.totalPinfall : '—'}</strong>`
+                : `Game Score: <strong class="text-slate-200">${p.scoreNum !== null ? p.scoreNum : 'Not entered'}</strong>`
+              }
+            </p>
+          </div>
+          <div class="text-right shrink-0">
+            <div class="text-2xl font-extrabold ${signedClass(p.netDiff)}">${formatSigned(p.netDiff)}</div>
+            <div class="text-xs text-slate-400">${p.totalPts} total pts</div>
+          </div>
+        </div>
+      `).join('');
+
+      const table = document.getElementById('pairwiseMatrixTable');
+      if (rows.length === 0) {
+        table.innerHTML = '';
+        return;
+      }
+      const headerCells = rows.map(c => `<th class="py-2.5 px-3 text-slate-300 font-semibold">${escapeHtml(c.name)}</th>`).join('');
+      const bodyRows = rows.map(rowP => {
+        const cells = rows.map(colP => {
+          if (rowP.id === colP.id) {
+            return `<td class="py-2.5 px-3 text-slate-600 bg-slate-950/40">—</td>`;
+          }
+          const diff = rowP.totalPts - colP.totalPts;
+          return `<td class="py-2.5 px-3 font-bold ${signedClass(diff)}">${formatSigned(diff)}</td>`;
+        }).join('');
+        return `
+          <tr class="border-t border-slate-800/70">
+            <th class="py-2.5 px-3 text-left font-semibold text-white bg-slate-950/50">${escapeHtml(rowP.name)}</th>
+            ${cells}
+            <td class="py-2.5 px-3 font-extrabold ${signedClass(rowP.netDiff)} bg-slate-950/50">${formatSigned(rowP.netDiff)}</td>
+          </tr>
+        `;
+      }).join('');
+
+      table.innerHTML = `
+        <thead>
+          <tr class="bg-slate-950/70 border-b border-slate-800">
+            <th class="py-2.5 px-3 text-left text-slate-400 font-medium">Player vs.</th>
+            ${headerCells}
+            <th class="py-2.5 px-3 text-emerald-400 font-bold">Net ±</th>
+          </tr>
+        </thead>
+        <tbody>${bodyRows}</tbody>
+      `;
+    }
+
+    function renderHistoryTab() {
+      const sessions = state.sessionsHistory || [];
+      const allGames = sessions.flatMap(s =>
+        (s.games || []).map(g => ({ ...g, sessionName: s.name, sessionNumber: s.sessionNumber }))
+      );
+      const kpis = document.getElementById('historyKpis');
+
+      const playerMap = new Map();
+      let totalStrikesAll = 0;
+      let totalPin10All = 0;
+      let highestPinfallAll = 0;
+
+      allGames.forEach(g => {
+        (g.results || []).forEach(r => {
+          const key = r.name.trim();
+          if (!playerMap.has(key)) {
+            playerMap.set(key, {
+              name: key,
+              games: 0,
+              totalPts: 0,
+              totalPinfall: 0,
+              pinfallCount: 0,
+              highPinfall: 0,
+              strikes: 0,
+              pin10: 0,
+              netDiff: 0
+            });
+          }
+          const agg = playerMap.get(key);
+          agg.games += 1;
+          agg.totalPts += r.totalPts;
+          agg.strikes += r.strikes;
+          agg.pin10 += r.pin10;
+          agg.netDiff += r.netDiff;
+          if (r.scoreNum !== null && r.scoreNum !== undefined) {
+            agg.totalPinfall += r.scoreNum;
+            agg.pinfallCount += 1;
+            if (r.scoreNum > agg.highPinfall) agg.highPinfall = r.scoreNum;
+            if (r.scoreNum > highestPinfallAll) highestPinfallAll = r.scoreNum;
+          }
+          totalStrikesAll += r.strikes;
+          totalPin10All += r.pin10;
+        });
+      });
+
+      kpis.innerHTML = `
+        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5">
+          <p class="text-[11px] uppercase tracking-wider text-slate-400">Sessions / Games</p>
+          <p class="text-2xl font-extrabold text-white mt-1">${sessions.length} <span class="text-sm font-semibold text-slate-400">/ ${allGames.length}</span></p>
+        </div>
+        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5">
+          <p class="text-[11px] uppercase tracking-wider text-slate-400">Lifetime Strikes</p>
+          <p class="text-2xl font-extrabold text-emerald-400 mt-1">${totalStrikesAll}</p>
+        </div>
+        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5">
+          <p class="text-[11px] uppercase tracking-wider text-slate-400">Lifetime Pin 10s</p>
+          <p class="text-2xl font-extrabold text-amber-400 mt-1">${totalPin10All}</p>
+        </div>
+        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5">
+          <p class="text-[11px] uppercase tracking-wider text-slate-400">High Pinfall</p>
+          <p class="text-2xl font-extrabold text-sky-400 mt-1">${highestPinfallAll > 0 ? highestPinfallAll : '—'}</p>
+        </div>
+      `;
+
+      const leaderboard = Array.from(playerMap.values()).sort((a, b) => b.netDiff - a.netDiff || b.totalPts - a.totalPts);
+      const tbody = document.getElementById('lifetimeTableBody');
+      if (leaderboard.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" class="py-6 text-center text-slate-400">No saved sessions yet.</td></tr>`;
+      } else {
+        tbody.innerHTML = leaderboard.map(p => {
+          const avgPts = p.games > 0 ? (p.totalPts / p.games).toFixed(1) : '0.0';
+          const avgPin = p.pinfallCount > 0 ? (p.totalPinfall / p.pinfallCount).toFixed(1) : '—';
+          return `
+            <tr class="hover:bg-slate-800/40">
+              <td class="py-2.5 px-4 font-semibold text-white">${escapeHtml(p.name)}</td>
+              <td class="py-2.5 px-3 text-center text-slate-300">${p.games}</td>
+              <td class="py-2.5 px-3 text-center font-bold text-white">${p.totalPts}</td>
+              <td class="py-2.5 px-3 text-center text-slate-300">${avgPts}</td>
+              <td class="py-2.5 px-3 text-center text-slate-300">${avgPin}</td>
+              <td class="py-2.5 px-3 text-center text-sky-300 font-semibold">${p.highPinfall > 0 ? p.highPinfall : '—'}</td>
+              <td class="py-2.5 px-3 text-center text-emerald-300">${p.strikes}</td>
+              <td class="py-2.5 px-3 text-center text-amber-300">${p.pin10}</td>
+              <td class="py-2.5 px-4 text-right font-extrabold ${signedClass(p.netDiff)}">${formatSigned(p.netDiff)}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      const list = document.getElementById('loggedGamesList');
+      if (sessions.length === 0) {
+        list.innerHTML = `<p class="text-sm text-slate-400">Completed sessions and their games will appear here with full ± breakdowns.</p>`;
+      } else {
+        list.innerHTML = [...sessions].reverse().map(s => {
+          const dateStr = new Date(s.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+          const gamesHtml = (s.games || []).map(g => {
+            const badges = [...(g.results || [])].sort((a, b) => b.totalPts - a.totalPts).map(r => `
+              <div class="flex items-center justify-between gap-2 bg-slate-950/70 px-3 py-1.5 rounded-lg border border-slate-800/80 text-xs">
+                <div>
+                  <span class="font-semibold text-white">${escapeHtml(r.name)}</span>
+                  <span class="text-slate-400 ml-1">(${r.strikes}X, ${r.pin10} P10${r.scoreNum !== null && r.scoreNum !== undefined ? `, ${r.scoreNum}` : ''}${r.isHighPinfall ? ' ★' : ''})</span>
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                  <span class="text-slate-300">${r.totalPts} pt</span>
+                  <span class="font-bold ${signedClass(r.netDiff)}">${formatSigned(r.netDiff)}</span>
+                </div>
+              </div>
+            `).join('');
+            return `
+              <div class="space-y-1.5">
+                <p class="text-[11px] font-semibold uppercase tracking-wider text-sky-400">Game ${g.gameNumber}</p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">${badges}</div>
+              </div>
+            `;
+          }).join('');
+
+          return `
+            <div class="bg-slate-950/50 border border-slate-800 rounded-2xl p-4 space-y-3">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="px-2.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 text-xs font-bold">${escapeHtml(s.name)}</span>
+                  <span class="text-xs text-slate-400">${(s.games || []).length} Game${(s.games || []).length > 1 ? 's' : ''} · ${escapeHtml(dateStr)}</span>
+                </div>
+                <button type="button" data-delete-session="${escapeHtml(s.id)}" class="text-xs text-rose-400 hover:text-rose-300">Delete</button>
+              </div>
+              <div class="space-y-3">${gamesHtml}</div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      renderTrendsChart(allGames);
+    }
+
+    function renderTrendsChart(allGames) {
+      const emptyEl = document.getElementById('trendsEmptyState');
+      const canvas = document.getElementById('trendsChart');
+      if (allGames.length === 0) {
+        emptyEl.classList.remove('hidden');
+        if (trendsChartInstance) {
+          trendsChartInstance.destroy();
+          trendsChartInstance = null;
+        }
+        return;
+      }
+      emptyEl.classList.add('hidden');
+
+      const metric = document.getElementById('trendMetricSelect').value;
+      const labels = allGames.map(g => `S${g.sessionNumber}·G${g.gameNumber}`);
+      const allNames = Array.from(new Set(allGames.flatMap(g => (g.results || []).map(r => r.name.trim()))));
+
+      const datasets = allNames.map((name, idx) => {
+        let runningNet = 0;
+        const data = allGames.map(g => {
+          const found = (g.results || []).find(r => r.name.trim() === name);
+          if (!found) return metric === 'cumNet' ? runningNet : null;
+          if (metric === 'cumNet') {
+            runningNet += found.netDiff;
+            return runningNet;
+          }
+          if (metric === 'pinfall') return (found.scoreNum !== null && found.scoreNum !== undefined) ? found.scoreNum : null;
+          if (metric === 'strikes') return found.strikes;
+          if (metric === 'pin10') return found.pin10;
+          return found.totalPts;
+        });
+        const color = CHART_COLORS[idx % CHART_COLORS.length];
+        return {
+          label: name,
+          data,
+          borderColor: color,
+          backgroundColor: color + '33',
+          borderWidth: 2.5,
+          tension: 0.25,
+          spanGaps: true,
+          pointRadius: 4,
+          pointHoverRadius: 6
+        };
+      });
+
+      if (trendsChartInstance) {
+        trendsChartInstance.destroy();
+      }
+      trendsChartInstance = new Chart(canvas.getContext('2d'), {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { labels: { color: '#cbd5e1', font: { family: 'Inter', size: 12 } } }
+          },
+          scales: {
+            x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148,163,184,0.1)' } },
+            y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148,163,184,0.1)' } }
+          }
+        }
+      });
+    }
+
+    function renderAll() {
+      renderTabs();
+      renderLiveTab();
+      renderSettlementTab();
+      if (state.activeTab === 'history') {
+        renderHistoryTab();
+      }
+    }
+
+    // --- Room Controls ---
+    document.getElementById('joinRoomBtn').addEventListener('click', () => {
+      connectToRoom(document.getElementById('roomCodeInput').value);
+    });
+
+    document.getElementById('newRoomBtn').addEventListener('click', () => {
+      const code = Math.random().toString(36).substring(2, 7).toUpperCase();
+      document.getElementById('roomCodeInput').value = code;
+      connectToRoom(code);
+    });
+
+    document.getElementById('disconnectRoomBtn').addEventListener('click', disconnectRoom);
+
+    document.getElementById('copyRoomLinkBtn').addEventListener('click', () => {
+      const code = state.roomCode || document.getElementById('roomCodeInput').value.trim().toUpperCase();
+      if (!code) {
+        showToast('Connect or generate a room code first');
+        return;
+      }
+      const url = new URL(window.location.href);
+      url.searchParams.set('room', code);
+      const link = url.toString();
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(link).then(() => showToast(`Copied invite link for room ${code}!`)).catch(() => fallbackCopy(link));
+      } else {
+        fallbackCopy(link);
+      }
+    });
+
+    // --- Event Listeners ---
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.activeTab = btn.dataset.tab;
+        saveState(false);
+        renderAll();
+      });
+    });
+
+    document.getElementById('sessionNameInput').addEventListener('input', (e) => {
+      state.currentSession.name = e.target.value || `Session ${state.currentSession.sessionNumber}`;
+      saveState(true);
+      renderTabs();
+    });
+
+    function addNewGameToSession() {
+      const sess = state.currentSession;
+      const nextNum = sess.games.length > 0 ? Math.max(...sess.games.map(g => g.gameNumber)) + 1 : 1;
+      sess.games.push({
+        gameNumber: nextNum,
+        players: makeEmptyRosterPlayers(sess.roster)
+      });
+      sess.activeGameIndex = sess.games.length - 1;
+      saveState(true);
+      renderAll();
+      showToast(`Started Game ${nextNum} in ${sess.name}`);
+    }
+
+    document.getElementById('addGameBtn').addEventListener('click', addNewGameToSession);
+    document.getElementById('nextGameBtn').addEventListener('click', addNewGameToSession);
+
+    document.getElementById('addPlayerForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const input = document.getElementById('newPlayerInput');
+      const name = input.value.trim();
+      if (!name) return;
+      const id = 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+      state.currentSession.roster.push({ id, name });
+      state.currentSession.games.forEach(g => {
+        g.players.push({ id, name, strikes: 0, pin10: 0, pinfall: '' });
+      });
+      state.selectedPlayerId = id;
+      input.value = '';
+      saveState(true);
+      renderAll();
+      showToast(`Added ${name} to ${state.currentSession.name}`);
+    });
+
+    document.getElementById('tab-live').addEventListener('click', (e) => {
+      const selectGameBtn = e.target.closest('[data-select-game]');
+      if (selectGameBtn) {
+        state.currentSession.activeGameIndex = Number(selectGameBtn.dataset.selectGame);
+        saveState(false);
+        renderAll();
+        return;
+      }
+
+      const removeGameBtn = e.target.closest('[data-remove-game]');
+      if (removeGameBtn) {
+        const idx = Number(removeGameBtn.dataset.removeGame);
+        if (state.currentSession.games.length <= 1) return;
+        const gNum = state.currentSession.games[idx].gameNumber;
+        openConfirm(`Remove Game ${gNum}?`, `Delete Game ${gNum} from ${state.currentSession.name}?`, () => {
+          state.currentSession.games.splice(idx, 1);
+          if (state.currentSession.activeGameIndex >= state.currentSession.games.length) {
+            state.currentSession.activeGameIndex = state.currentSession.games.length - 1;
+          }
+          saveState(true);
+          renderAll();
+          showToast(`Removed Game ${gNum}`);
+        });
+        return;
+      }
+
+      const selectBtn = e.target.closest('[data-select-player]');
+      if (selectBtn) {
+        state.selectedPlayerId = selectBtn.dataset.selectPlayer;
+        saveState(false);
+        renderLiveTab();
+        return;
+      }
+
+      const removeBtn = e.target.closest('[data-remove-player]');
+      if (removeBtn) {
+        const id = removeBtn.dataset.removePlayer;
+        const sess = state.currentSession;
+        const p = sess.roster.find(x => x.id === id);
+        if (!p || sess.roster.length <= 1) return;
+        sess.roster = sess.roster.filter(x => x.id !== id);
+        sess.games.forEach(g => {
+          g.players = g.players.filter(x => x.id !== id);
+        });
+        state.selectedPlayerId = sess.roster[0].id;
+        saveState(true);
+        renderAll();
+        showToast(`Removed ${p.name} from session`);
+        return;
+      }
+
+      const actionBtn = e.target.closest('[data-action]');
+      if (actionBtn) {
+        const action = actionBtn.dataset.action;
+        const id = actionBtn.dataset.id;
+        const activeGame = getActiveGame();
+        const p = activeGame.players.find(x => x.id === id);
+        if (!p) return;
+        if (action === 'inc-strike') p.strikes += 1;
+        if (action === 'dec-strike') p.strikes = Math.max(0, p.strikes - 1);
+        if (action === 'inc-pin10') p.pin10 += 1;
+        if (action === 'dec-pin10') p.pin10 = Math.max(0, p.pin10 - 1);
+        saveState(true);
+        renderLiveTab();
+        renderSettlementTab();
+      }
+    });
+
+    document.getElementById('tab-live').addEventListener('input', (e) => {
+      const input = e.target.closest('[data-pinfall-id]');
+      if (!input) return;
+      const id = input.dataset.pinfallId;
+      const activeGame = getActiveGame();
+      const p = activeGame.players.find(x => x.id === id);
+      if (!p) return;
+      let val = input.value;
+      if (val !== '') {
+        const num = Math.max(0, Math.min(300, parseInt(val, 10) || 0));
+        val = String(num);
+      }
+      p.pinfall = val;
+      saveState(true);
+      document.querySelectorAll(`[data-pinfall-id="${id}"]`).forEach(el => {
+        if (el !== input) el.value = val;
+      });
+      if (e.target.id === 'activePinfallInput') {
+        renderLiveTab();
+        const newInput = document.getElementById('activePinfallInput');
+        if (newInput) {
+          newInput.focus();
+          newInput.setSelectionRange(newInput.value.length, newInput.value.length);
+        }
+      } else {
+        renderSettlementTab();
+      }
+    });
+
+    document.getElementById('resetCurrentGameBtn').addEventListener('click', () => {
+      const activeGame = getActiveGame();
+      openConfirm(
+        `Reset Game ${activeGame.gameNumber}?`,
+        `Clear all strikes, Pin 10 leaves, and game scores for Game ${activeGame.gameNumber}?`,
+        () => {
+          activeGame.players = activeGame.players.map(p => ({ ...p, strikes: 0, pin10: 0, pinfall: '' }));
+          saveState(true);
+          renderAll();
+          showToast(`Game ${activeGame.gameNumber} counts reset`);
+        }
+      );
+    });
+
+    document.getElementById('finishSessionBtn').addEventListener('click', () => {
+      const sess = state.currentSession;
+      if (sess.roster.length < 2) {
+        showToast('Add at least 2 players to save a session.');
+        return;
+      }
+      openConfirm(
+        `Save ${sess.name} to Lifetime?`,
+        `Log all ${sess.games.length} game(s) in ${sess.name} to Lifetime History & Trends and start a new session?`,
+        () => {
+          const archivedSession = {
+            id: sess.id,
+            sessionNumber: sess.sessionNumber,
+            name: sess.name,
+            timestamp: Date.now(),
+            games: sess.games.map(g => ({
+              gameNumber: g.gameNumber,
+              results: computeGameMetrics(g.players).map(p => ({
+                name: p.name,
+                strikes: p.strikes,
+                pin10: p.pin10,
+                scoreNum: p.scoreNum,
+                isHighPinfall: p.isHighPinfall,
+                totalPts: p.totalPts,
+                netDiff: p.netDiff
+              }))
+            }))
+          };
+          state.sessionsHistory.push(archivedSession);
+          const nextSessNum = sess.sessionNumber + 1;
+          state.currentSession = defaultSession(nextSessNum, sess.roster);
+          state.settleScope = 'session';
+          saveState(true);
+          renderAll();
+          showToast(`Saved ${archivedSession.name} (${archivedSession.games.length} game${archivedSession.games.length > 1 ? 's' : ''})!`);
+        }
+      );
+    });
+
+    // Settlement Tab Listeners
+    document.getElementById('settleScopeSelect').addEventListener('change', (e) => {
+      state.settleScope = e.target.value;
+      saveState(false);
+      renderSettlementTab();
+    });
+
+    document.getElementById('copySettlementBtn').addEventListener('click', () => {
+      const sess = state.currentSession;
+      let lines = [];
+      if (state.settleScope === 'session') {
+        const rows = computeSessionCumulative(sess).sort((a, b) => b.totalPts - a.totalPts);
+        lines = [
+          `🎳 1-2-3 Bowling — ${sess.name} (${sess.games.length} Game${sess.games.length > 1 ? 's' : ''})`,
+          ...rows.map(p => `${p.name}: ${p.totalPts} pts (${formatSigned(p.netDiff)}) | ${p.strikes}X, ${p.pin10} P10, Pinfall ${p.pinfallGames > 0 ? p.totalPinfall : '—'}`)
+        ];
+      } else {
+        const gIdx = Number(state.settleScope.replace('game_', '')) || 0;
+        const g = sess.games[gIdx] || sess.games[0];
+        const rows = computeGameMetrics(g.players).sort((a, b) => b.totalPts - a.totalPts);
+        lines = [
+          `🎳 1-2-3 Bowling — ${sess.name} · Game ${g.gameNumber}`,
+          ...rows.map(p => `${p.name}: ${p.totalPts} pts (${formatSigned(p.netDiff)}) | ${p.strikes}X, ${p.pin10} P10, Score ${p.scoreNum ?? '—'}`)
+        ];
+      }
+      const text = lines.join('\n');
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => showToast('Copied ± summary!')).catch(() => fallbackCopy(text));
+      } else {
+        fallbackCopy(text);
+      }
+    });
+
+    function fallbackCopy(text) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        showToast('Copied!');
+      } catch (e) {
+        showToast('Unable to copy automatically.');
+      }
+      document.body.removeChild(ta);
+    }
+
+    // History Tab Listeners
+    document.getElementById('trendMetricSelect').addEventListener('change', () => {
+      const allGames = (state.sessionsHistory || []).flatMap(s =>
+        (s.games || []).map(g => ({ ...g, sessionName: s.name, sessionNumber: s.sessionNumber }))
+      );
+      renderTrendsChart(allGames);
+    });
+
+    document.getElementById('loggedGamesList').addEventListener('click', (e) => {
+      const delBtn = e.target.closest('[data-delete-session]');
+      if (!delBtn) return;
+      const sid = delBtn.dataset.deleteSession;
+      openConfirm('Delete Saved Session?', 'Remove this session and all its games from lifetime history?', () => {
+        state.sessionsHistory = state.sessionsHistory.filter(s => s.id !== sid);
+        saveState(true);
+        renderHistoryTab();
+        showToast('Session deleted from history');
+      });
+    });
+
+    document.getElementById('clearHistoryBtn').addEventListener('click', () => {
+      if (state.sessionsHistory.length === 0) return;
+      openConfirm('Clear All Lifetime History?', 'This will permanently erase all saved sessions and trends.', () => {
+        state.sessionsHistory = [];
+        state.currentSession.sessionNumber = 1;
+        state.currentSession.name = 'Session 1';
+        saveState(true);
+        renderAll();
+        showToast('Lifetime history cleared');
+      });
+    });
+
+    document.getElementById('exportDataBtn').addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify({ sessionsHistory: state.sessionsHistory, exportedAt: new Date().toISOString() }, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `bowling-123-sessions-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('Exported sessions JSON');
+    });
+
+    document.getElementById('importDataInput').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const parsed = JSON.parse(reader.result);
+          const imported = Array.isArray(parsed) ? parsed : parsed.sessionsHistory;
+          if (!Array.isArray(imported)) throw new Error('Invalid format');
+          state.sessionsHistory = imported;
+          saveState(true);
+          renderAll();
+          showToast(`Imported ${imported.length} session(s)`);
+        } catch (err) {
+          showToast('Invalid JSON sessions file');
+        }
+        e.target.value = '';
+      };
+      reader.readAsText(file);
+    });
+
+    // Modals
+    document.getElementById('rulesBtn').addEventListener('click', () => {
+      document.getElementById('rulesModal').classList.remove('hidden');
+    });
+    document.getElementById('closeRulesBtn').addEventListener('click', () => {
+      document.getElementById('rulesModal').classList.add('hidden');
+    });
+    document.getElementById('closeRulesFooterBtn').addEventListener('click', () => {
+      document.getElementById('rulesModal').classList.add('hidden');
+    });
+    document.getElementById('confirmCancelBtn').addEventListener('click', closeConfirm);
+    document.getElementById('confirmOkBtn').addEventListener('click', () => {
+      if (confirmCallback) confirmCallback();
+      closeConfirm();
+    });
+
+    // Initial render & auto-join room from URL or saved state
+    renderAll();
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlRoom = urlParams.get('room');
+    if (urlRoom) {
+      connectToRoom(urlRoom);
+    } else if (state.roomCode) {
+      connectToRoom(state.roomCode);
+    }
+  </script>
+</body>
+</html>
