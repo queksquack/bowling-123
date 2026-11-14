@@ -181,6 +181,9 @@
               class="flex-1 max-w-xs px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-sm font-semibold text-white focus:outline-none focus:border-emerald-500" />
           </div>
           <div class="flex items-center gap-2">
+            <button id="newLocalSessionBtn" type="button" class="hidden tap-btn px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">
+              New Local Game
+            </button>
             <button id="addGameBtn" type="button" class="tap-btn px-3 py-1.5 rounded-xl text-xs font-semibold bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/30">
               + Add Game
             </button>
@@ -491,7 +494,7 @@
     let developerUid = '';
 
     function isDeveloper() {
-      if (!currentUser) return !state.roomCode && !db;
+      if (!currentUser) return false;
       return Boolean(developerUid && currentUser.uid === developerUid);
     }
 
@@ -1213,15 +1216,17 @@
         </tr>
       `).join('');
 
-      // Creator-only visibility for Save Session to Lifetime & Close Room
+      // Show "New Local Game" only in Local Mode (!currentUser)
+      const newLocalBtn = document.getElementById('newLocalSessionBtn');
+      if (newLocalBtn) newLocalBtn.classList.toggle('hidden', Boolean(currentUser));
+
+      // Creator-only visibility for Save Session to Lifetime & Close Room (never shown in Local Mode)
       const finishContainer = document.getElementById('finishSessionContainer');
       const finishBtn = document.getElementById('finishSessionBtn');
       if (finishContainer && finishBtn) {
-        const isCreator = !state.roomCode || !sess.creatorId || sess.creatorId === getClientId();
-        finishContainer.classList.toggle('hidden', !isCreator);
-        finishBtn.textContent = state.roomCode
-          ? 'Save Session to Lifetime & Close Room'
-          : 'Save Session to Lifetime';
+        const canCommit = Boolean(currentUser && state.roomCode && (!sess.creatorId || sess.creatorId === getClientId()));
+        finishContainer.classList.toggle('hidden', !canCommit);
+        finishBtn.textContent = 'Save Session to Lifetime & Close Room';
       }
 
       // Session Cumulative Standings
@@ -1779,6 +1784,22 @@
       );
     }
 
+    document.getElementById('newLocalSessionBtn').addEventListener('click', () => {
+      if (currentUser) return;
+      openConfirm(
+        'Start New Local Game?',
+        'Reset the current local session to a blank slate (no players, Game 1)?',
+        () => {
+          state.currentSession = defaultSession(1);
+          state.selectedPlayerId = null;
+          state.settleScope = 'session';
+          saveState(false);
+          renderAll();
+          showToast('Started a fresh local game');
+        }
+      );
+    });
+
     document.getElementById('addGameBtn').addEventListener('click', addNewGameToSession);
     document.getElementById('nextGameBtn').addEventListener('click', addNewGameToSession);
 
@@ -2137,7 +2158,7 @@
         inView.classList.remove('hidden');
         const display = fixedUserPlayerName || currentUser.displayName || 'Bowler';
         document.getElementById('authPlayerNameLabel').textContent = display;
-        document.getElementById('authUserEmailLabel').textContent = currentUser.email || '';
+        document.getElementById('authUserEmailLabel').textContent = `${currentUser.email || ''} · UID: ${currentUser.uid}${isDeveloper() ? ' · Developer' : ''}`;
         document.getElementById('authUserAvatar').textContent = display.slice(0, 1).toUpperCase();
       } else {
         outView.classList.remove('hidden');
