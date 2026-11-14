@@ -927,6 +927,11 @@
       return sess.games[sess.activeGameIndex];
     }
 
+    function isViewingLockedGame() {
+      const sess = state.currentSession;
+      return sess.games.length > 1 && sess.activeGameIndex < sess.games.length - 1;
+    }
+
     function formatSigned(val) {
       if (val > 0) return `+${val}`;
       if (val < 0) return `${val}`;
@@ -978,6 +983,9 @@
     // --- Rendering ---
     function renderTabs() {
       const sess = state.currentSession;
+      if (isViewingLockedGame()) {
+        sess.activeGameIndex = sess.games.length - 1;
+      }
       const activeGame = getActiveGame();
       document.querySelectorAll('.tab-btn').forEach(btn => {
         const isActive = btn.dataset.tab === state.activeTab;
@@ -1049,6 +1057,9 @@
       }).join('');
 
       // Focused Phone Controller
+      const isLocked = isViewingLockedGame();
+      const resetBtn = document.getElementById('resetCurrentGameBtn');
+      if (resetBtn) resetBtn.classList.toggle('hidden', isLocked);
       const activePlayer = computed.find(p => p.id === state.selectedPlayerId);
       const controller = document.getElementById('phoneControllerContainer');
 
@@ -1064,12 +1075,13 @@
               <div>
                 <div class="flex items-center gap-2">
                   <h3 class="text-base font-bold text-white">${escapeHtml(activePlayer.name)}'s Phone <span class="text-xs font-normal text-slate-400">(Game ${activeGame.gameNumber})</span></h3>
+                  ${isLocked ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">LOCKED (READ-ONLY)</span>` : ''}
                   <span id="activeHighPinfallBadge" class="${activePlayer.isHighPinfall ? '' : 'hidden '}px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30">HIGH PINFALL +3 PT</span>
                 </div>
                 <p id="activePlayerSummaryText" class="text-xs text-slate-400">Game Total: <strong class="text-white">${activePlayer.totalPts} pts</strong> · Game Net <strong class="${signedClass(activePlayer.netDiff)}">${formatSigned(activePlayer.netDiff)}</strong></p>
               </div>
             </div>
-            ${sess.roster.length > 1 ? `
+            ${!isLocked && (activeGame.players || []).length > 1 ? `
               <button type="button" data-remove-player="${escapeHtml(activePlayer.id)}" class="px-2.5 py-1 rounded-lg text-xs text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/30">
                 Remove Player
               </button>
@@ -1086,12 +1098,12 @@
                 <span class="text-2xl font-extrabold text-white">${activePlayer.strikes}</span>
               </div>
               <div class="flex items-center gap-2">
-                <button type="button" data-action="dec-strike" data-id="${escapeHtml(activePlayer.id)}"
-                  class="tap-btn w-12 h-12 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-lg border border-slate-700">
+                <button type="button" data-action="dec-strike" data-id="${escapeHtml(activePlayer.id)}" ${isLocked ? 'disabled' : ''}
+                  class="tap-btn w-12 h-12 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-lg border border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed">
                   −
                 </button>
-                <button type="button" data-action="inc-strike" data-id="${escapeHtml(activePlayer.id)}"
-                  class="tap-btn flex-1 h-12 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-950/50">
+                <button type="button" data-action="inc-strike" data-id="${escapeHtml(activePlayer.id)}" ${isLocked ? 'disabled' : ''}
+                  class="tap-btn flex-1 h-12 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-950/50 disabled:opacity-40 disabled:cursor-not-allowed">
                   + Strike (1 pt)
                 </button>
               </div>
@@ -1106,12 +1118,12 @@
                 <span class="text-2xl font-extrabold text-white">${activePlayer.pin10}</span>
               </div>
               <div class="flex items-center gap-2">
-                <button type="button" data-action="dec-pin10" data-id="${escapeHtml(activePlayer.id)}"
-                  class="tap-btn w-12 h-12 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-lg border border-slate-700">
+                <button type="button" data-action="dec-pin10" data-id="${escapeHtml(activePlayer.id)}" ${isLocked ? 'disabled' : ''}
+                  class="tap-btn w-12 h-12 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-lg border border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed">
                   −
                 </button>
-                <button type="button" data-action="inc-pin10" data-id="${escapeHtml(activePlayer.id)}"
-                  class="tap-btn flex-1 h-12 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-sm shadow-lg shadow-amber-950/40">
+                <button type="button" data-action="inc-pin10" data-id="${escapeHtml(activePlayer.id)}" ${isLocked ? 'disabled' : ''}
+                  class="tap-btn flex-1 h-12 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-sm shadow-lg shadow-amber-950/40 disabled:opacity-40 disabled:cursor-not-allowed">
                   + Pin 10 (2 pt)
                 </button>
               </div>
@@ -1129,8 +1141,8 @@
               </div>
               <input id="activePinfallInput" type="number" min="0" max="300" inputmode="numeric"
                 value="${escapeHtml(activePlayer.pinfall)}" placeholder="Enter score (0–300)"
-                data-pinfall-id="${escapeHtml(activePlayer.id)}"
-                class="w-full h-12 px-3.5 rounded-xl bg-slate-900 border border-slate-700 text-center text-lg font-bold text-white placeholder-slate-500 focus:outline-none focus:border-sky-400" />
+                data-pinfall-id="${escapeHtml(activePlayer.id)}" ${isLocked ? 'disabled' : ''}
+                class="w-full h-12 px-3.5 rounded-xl bg-slate-900 border border-slate-700 text-center text-lg font-bold text-white placeholder-slate-500 focus:outline-none focus:border-sky-400 disabled:opacity-50 disabled:cursor-not-allowed" />
             </div>
           </div>
         `;
@@ -1702,6 +1714,10 @@
 
       const removeBtn = e.target.closest('[data-remove-player]');
       if (removeBtn) {
+        if (isViewingLockedGame()) {
+          showToast('Previous games are locked and cannot be edited.');
+          return;
+        }
         const id = removeBtn.dataset.removePlayer;
         const sess = state.currentSession;
         const activeIdx = sess.activeGameIndex || 0;
@@ -1723,6 +1739,10 @@
 
       const actionBtn = e.target.closest('[data-action]');
       if (actionBtn) {
+        if (isViewingLockedGame()) {
+          showToast('Previous games are locked and cannot be edited.');
+          return;
+        }
         const action = actionBtn.dataset.action;
         const id = actionBtn.dataset.id;
         const activeGame = getActiveGame();
@@ -1755,6 +1775,10 @@
     document.getElementById('tab-live').addEventListener('input', (e) => {
       const input = e.target.closest('[data-pinfall-id]');
       if (!input) return;
+      if (isViewingLockedGame()) {
+        showToast('Previous games are locked and cannot be edited.');
+        return;
+      }
       const id = input.dataset.pinfallId;
       const activeGame = getActiveGame();
       const gIdx = state.currentSession.activeGameIndex;
@@ -1776,6 +1800,10 @@
     });
 
     document.getElementById('resetCurrentGameBtn').addEventListener('click', () => {
+      if (isViewingLockedGame()) {
+        showToast('Previous games are locked and cannot be reset.');
+        return;
+      }
       const activeGame = getActiveGame();
       openConfirm(
         `Reset Game ${activeGame.gameNumber}?`,
