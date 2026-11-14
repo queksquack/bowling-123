@@ -82,9 +82,14 @@
             <div class="text-xs text-slate-300">
               <span class="font-semibold text-white">Google Sign-In</span> required for live cloud rooms &amp; fixed bowler identity.
             </div>
-            <button id="googleSignInBtn" type="button" class="tap-btn px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-white hover:bg-slate-200 text-slate-900 flex items-center gap-2 shadow">
-              <span>Sign in with Google</span>
-            </button>
+            <div class="flex items-center gap-2">
+              <button id="googleSignInBtn" type="button" class="tap-btn px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-white hover:bg-slate-200 text-slate-900 flex items-center gap-2 shadow">
+                <span>Sign in with Google</span>
+              </button>
+              <button id="googleRedirectSignInBtn" type="button" class="tap-btn px-3 py-1.5 rounded-xl text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700" title="Use full-page redirect if popups are blocked or closed">
+                Use Redirect
+              </button>
+            </div>
           </div>
           <p id="authErrorMsg" class="hidden text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-xl px-3 py-2"></p>
         </div>
@@ -1911,12 +1916,40 @@
     }
 
     if (auth) {
-      getRedirectResult(auth).catch((err) => {
+      getRedirectResult(auth).then((res) => {
+        if (res && res.user) {
+          try {
+            const pendingRoom = sessionStorage.getItem('bowling_123_pending_room');
+            if (pendingRoom) {
+              sessionStorage.removeItem('bowling_123_pending_room');
+              state.roomCode = pendingRoom;
+              saveState(false);
+            }
+          } catch (e) { /* ignore */ }
+        }
+      }).catch((err) => {
         if (err && err.code) {
           showAuthError(`Sign-in error (${err.code}): ${err.message}`);
         }
       });
     }
+
+    document.getElementById('googleRedirectSignInBtn').addEventListener('click', async () => {
+      clearAuthError();
+      if (!auth || !googleProvider) {
+        showAuthError('Firebase Auth is unavailable in this environment.');
+        return;
+      }
+      try {
+        const roomVal = document.getElementById('roomCodeInput').value.trim().toUpperCase();
+        if (roomVal) sessionStorage.setItem('bowling_123_pending_room', roomVal);
+      } catch (e) { /* ignore */ }
+      try {
+        await signInWithRedirect(auth, googleProvider);
+      } catch (err) {
+        showAuthError(`Redirect sign-in failed (${err.code || 'error'}): ${err.message || err}`);
+      }
+    });
 
     document.getElementById('googleSignInBtn').addEventListener('click', async () => {
       clearAuthError();
