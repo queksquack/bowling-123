@@ -77,13 +77,16 @@
     <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 sm:p-4 space-y-3">
       <!-- Auth Row -->
       <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800/80">
-        <div id="authSignedOutView" class="flex flex-wrap items-center justify-between gap-2 w-full">
-          <div class="text-xs text-slate-300">
-            <span class="font-semibold text-white">Google Sign-In</span> required for live cloud rooms &amp; fixed bowler identity.
+        <div id="authSignedOutView" class="w-full space-y-2">
+          <div class="flex flex-wrap items-center justify-between gap-2 w-full">
+            <div class="text-xs text-slate-300">
+              <span class="font-semibold text-white">Google Sign-In</span> required for live cloud rooms &amp; fixed bowler identity.
+            </div>
+            <button id="googleSignInBtn" type="button" class="tap-btn px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-white hover:bg-slate-200 text-slate-900 flex items-center gap-2 shadow">
+              <span>Sign in with Google</span>
+            </button>
           </div>
-          <button id="googleSignInBtn" type="button" class="tap-btn px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-white hover:bg-slate-200 text-slate-900 flex items-center gap-2 shadow">
-            <span>Sign in with Google</span>
-          </button>
+          <p id="authErrorMsg" class="hidden text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-xl px-3 py-2"></p>
         </div>
 
         <div id="authSignedInView" class="hidden flex flex-wrap items-center justify-between gap-2 w-full">
@@ -433,7 +436,7 @@
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
     import { getDatabase, ref, set, get, update, runTransaction, onValue, off } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js';
-    import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
+    import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 
     const firebaseConfig = {
       apiKey: "AIzaSyBg3aCuhcIt99E9Ncy4Bn0gLOVpV1VfHCo",
@@ -1890,17 +1893,59 @@
       }
     }
 
-    document.getElementById('googleSignInBtn').addEventListener('click', () => {
+    function showAuthError(msg) {
+      const el = document.getElementById('authErrorMsg');
+      if (el) {
+        el.textContent = msg;
+        el.classList.remove('hidden');
+      }
+      showToast(msg);
+    }
+
+    function clearAuthError() {
+      const el = document.getElementById('authErrorMsg');
+      if (el) {
+        el.textContent = '';
+        el.classList.add('hidden');
+      }
+    }
+
+    if (auth) {
+      getRedirectResult(auth).catch((err) => {
+        if (err && err.code) {
+          showAuthError(`Sign-in error (${err.code}): ${err.message}`);
+        }
+      });
+    }
+
+    document.getElementById('googleSignInBtn').addEventListener('click', async () => {
+      clearAuthError();
       if (!auth || !googleProvider) {
-        showToast('Firebase Auth unavailable');
+        showAuthError('Firebase Auth is unavailable in this environment.');
         return;
       }
-      signInWithPopup(auth, googleProvider).catch((err) => {
+      try {
+        await signInWithPopup(auth, googleProvider);
+      } catch (err) {
         console.error('Google Sign-In error:', err);
-        showToast(err.code === 'auth/unauthorized-domain'
-          ? 'Add this domain to Firebase Auth → Authorized Domains'
-          : 'Google Sign-In failed: ' + (err.message || err.code));
-      });
+        const code = err && err.code ? err.code : '';
+        if (code === 'auth/popup-blocked' || code === 'auth/cancelled-popup-request') {
+          try {
+            await signInWithRedirect(auth, googleProvider);
+            return;
+          } catch (redirErr) {
+            showAuthError(`Redirect sign-in failed (${redirErr.code || 'error'}): ${redirErr.message}`);
+            return;
+          }
+        }
+        if (code === 'auth/unauthorized-domain') {
+          showAuthError(`Domain "${window.location.hostname || 'preview'}" is not authorized. Add your github.io domain in Firebase Auth → Settings → Authorized domains (note: Google Sign-In will not work inside a local preview frame).`);
+        } else if (code === 'auth/operation-not-allowed') {
+          showAuthError('Google provider is not enabled yet in Firebase Auth → Sign-in method.');
+        } else {
+          showAuthError(`Google Sign-In failed (${code || 'unknown'}): ${err.message || err}`);
+        }
+      }
     });
 
     document.getElementById('googleSignOutBtn').addEventListener('click', () => {
