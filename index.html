@@ -1016,7 +1016,6 @@
                 : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
             }">
             <span>📱 ${escapeHtml(p.name)}</span>
-            <span class="px-1.5 py-0.5 rounded bg-slate-900 text-[10px] text-slate-300">${p.totalPts} pt</span>
           </button>
         `;
       }).join('');
@@ -1037,9 +1036,9 @@
               <div>
                 <div class="flex items-center gap-2">
                   <h3 class="text-base font-bold text-white">${escapeHtml(activePlayer.name)}'s Phone <span class="text-xs font-normal text-slate-400">(Game ${activeGame.gameNumber})</span></h3>
-                  ${activePlayer.isHighPinfall ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30">HIGH PINFALL +3 PT</span>` : ''}
+                  <span id="activeHighPinfallBadge" class="${activePlayer.isHighPinfall ? '' : 'hidden '}px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30">HIGH PINFALL +3 PT</span>
                 </div>
-                <p class="text-xs text-slate-400">Game Total: <strong class="text-white">${activePlayer.totalPts} pts</strong> · Game Net <strong class="${signedClass(activePlayer.netDiff)}">${formatSigned(activePlayer.netDiff)}</strong></p>
+                <p id="activePlayerSummaryText" class="text-xs text-slate-400">Game Total: <strong class="text-white">${activePlayer.totalPts} pts</strong> · Game Net <strong class="${signedClass(activePlayer.netDiff)}">${formatSigned(activePlayer.netDiff)}</strong></p>
               </div>
             </div>
             ${sess.roster.length > 1 ? `
@@ -1096,7 +1095,7 @@
                   <span class="text-xs font-semibold uppercase tracking-wider text-sky-400">Final Game Score</span>
                   <p class="text-[11px] text-slate-400">Highest gets +3 PT</p>
                 </div>
-                <span class="text-xs font-semibold ${activePlayer.isHighPinfall ? 'text-sky-300' : 'text-slate-500'}">
+                <span id="activePinfallBonusLabel" class="text-xs font-semibold ${activePlayer.isHighPinfall ? 'text-sky-300' : 'text-slate-500'}">
                   ${activePlayer.isHighPinfall ? '+3 PT' : '0 PT'}
                 </span>
               </div>
@@ -1120,32 +1119,16 @@
               ${escapeHtml(p.name)}
             </button>
           </td>
-          <td class="py-3 px-3 text-center">
-            <div class="inline-flex items-center gap-1.5">
-              <button type="button" data-action="dec-strike" data-id="${escapeHtml(p.id)}" class="w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold">−</button>
-              <span class="w-6 text-center font-semibold">${p.strikes}</span>
-              <button type="button" data-action="inc-strike" data-id="${escapeHtml(p.id)}" class="w-6 h-6 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-xs font-bold">+</button>
-            </div>
-          </td>
-          <td class="py-3 px-3 text-center">
-            <div class="inline-flex items-center gap-1.5">
-              <button type="button" data-action="dec-pin10" data-id="${escapeHtml(p.id)}" class="w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold">−</button>
-              <span class="w-6 text-center font-semibold">${p.pin10}</span>
-              <button type="button" data-action="inc-pin10" data-id="${escapeHtml(p.id)}" class="w-6 h-6 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-bold">+</button>
-            </div>
-          </td>
-          <td class="py-3 px-3 text-center">
-            <input type="number" min="0" max="300" inputmode="numeric" placeholder="—"
-              value="${escapeHtml(p.pinfall)}" data-pinfall-id="${escapeHtml(p.id)}"
-              class="w-16 px-2 py-1 rounded-lg bg-slate-950 border border-slate-700 text-center text-sm font-semibold text-white focus:outline-none focus:border-sky-400" />
-          </td>
-          <td class="py-3 px-3 text-center">
+          <td class="py-3 px-3 text-center font-semibold text-emerald-300" data-cell-strikes="${escapeHtml(p.id)}">${p.strikes}</td>
+          <td class="py-3 px-3 text-center font-semibold text-amber-300" data-cell-pin10="${escapeHtml(p.id)}">${p.pin10}</td>
+          <td class="py-3 px-3 text-center font-semibold text-slate-200" data-cell-score="${escapeHtml(p.id)}">${p.scoreNum !== null ? p.scoreNum : '—'}</td>
+          <td class="py-3 px-3 text-center" data-cell-high="${escapeHtml(p.id)}">
             ${p.isHighPinfall
               ? `<span class="inline-block px-2 py-0.5 rounded-full text-xs font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30">+3</span>`
               : `<span class="text-slate-600">—</span>`}
           </td>
-          <td class="py-3 px-3 text-right font-bold text-white">${p.totalPts}</td>
-          <td class="py-3 px-4 text-right font-bold ${signedClass(p.netDiff)}">${formatSigned(p.netDiff)}</td>
+          <td class="py-3 px-3 text-right font-bold text-white" data-cell-pts="${escapeHtml(p.id)}">${p.totalPts}</td>
+          <td class="py-3 px-4 text-right font-bold ${signedClass(p.netDiff)}" data-cell-net="${escapeHtml(p.id)}">${formatSigned(p.netDiff)}</td>
         </tr>
       `).join('');
 
@@ -1461,30 +1444,73 @@
       });
     }
 
+    function refreshLiveComputedInPlace() {
+      const sess = state.currentSession;
+      const activeGame = getActiveGame();
+      const computed = computeGameMetrics(activeGame.players);
+
+      const activePlayer = computed.find(p => p.id === state.selectedPlayerId);
+      if (activePlayer) {
+        const badge = document.getElementById('activeHighPinfallBadge');
+        if (badge) badge.classList.toggle('hidden', !activePlayer.isHighPinfall);
+        const summary = document.getElementById('activePlayerSummaryText');
+        if (summary) {
+          summary.innerHTML = `Game Total: <strong class="text-white">${activePlayer.totalPts} pts</strong> · Game Net <strong class="${signedClass(activePlayer.netDiff)}">${formatSigned(activePlayer.netDiff)}</strong>`;
+        }
+        const bonusLbl = document.getElementById('activePinfallBonusLabel');
+        if (bonusLbl) {
+          bonusLbl.className = `text-xs font-semibold ${activePlayer.isHighPinfall ? 'text-sky-300' : 'text-slate-500'}`;
+          bonusLbl.textContent = activePlayer.isHighPinfall ? '+3 PT' : '0 PT';
+        }
+      }
+
+      computed.forEach(p => {
+        const scoreCell = document.querySelector(`[data-cell-score="${p.id}"]`);
+        if (scoreCell) scoreCell.textContent = p.scoreNum !== null ? p.scoreNum : '—';
+        const highCell = document.querySelector(`[data-cell-high="${p.id}"]`);
+        if (highCell) {
+          highCell.innerHTML = p.isHighPinfall
+            ? `<span class="inline-block px-2 py-0.5 rounded-full text-xs font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30">+3</span>`
+            : `<span class="text-slate-600">—</span>`;
+        }
+        const ptsCell = document.querySelector(`[data-cell-pts="${p.id}"]`);
+        if (ptsCell) ptsCell.textContent = p.totalPts;
+        const netCell = document.querySelector(`[data-cell-net="${p.id}"]`);
+        if (netCell) {
+          netCell.className = `py-3 px-4 text-right font-bold ${signedClass(p.netDiff)}`;
+          netCell.textContent = formatSigned(p.netDiff);
+        }
+      });
+
+      const sessCum = computeSessionCumulative(sess).sort((a, b) => b.netDiff - a.netDiff || b.totalPts - a.totalPts);
+      const cumBody = document.getElementById('sessionCumulativeBody');
+      if (cumBody) {
+        cumBody.innerHTML = sessCum.map(p => `
+          <tr class="hover:bg-slate-800/40">
+            <td class="py-2.5 px-4 font-semibold text-white">${escapeHtml(p.name)}</td>
+            <td class="py-2.5 px-3 text-center text-emerald-300">${p.strikes}</td>
+            <td class="py-2.5 px-3 text-center text-amber-300">${p.pin10}</td>
+            <td class="py-2.5 px-3 text-center text-slate-300">${p.pinfallGames > 0 ? p.totalPinfall : '—'}</td>
+            <td class="py-2.5 px-3 text-right font-bold text-white">${p.totalPts}</td>
+            <td class="py-2.5 px-4 text-right font-extrabold ${signedClass(p.netDiff)}">${formatSigned(p.netDiff)}</td>
+          </tr>
+        `).join('');
+      }
+    }
+
     function renderAll() {
       const activeEl = document.activeElement;
-      const focusedPinfallId = activeEl && activeEl.dataset ? activeEl.dataset.pinfallId : null;
-      const focusedIsMain = activeEl && activeEl.id === 'activePinfallInput';
-      const selStart = activeEl && typeof activeEl.selectionStart === 'number' ? activeEl.selectionStart : null;
+      const isTypingPinfall = activeEl && activeEl.dataset && activeEl.dataset.pinfallId;
 
       renderTabs();
-      renderLiveTab();
+      if (isTypingPinfall) {
+        refreshLiveComputedInPlace();
+      } else {
+        renderLiveTab();
+      }
       renderSettlementTab();
       if (state.activeTab === 'history') {
         renderHistoryTab();
-      }
-
-      if (focusedPinfallId) {
-        const selector = focusedIsMain
-          ? '#activePinfallInput'
-          : `tbody#liveScoreboardBody [data-pinfall-id="${focusedPinfallId}"]`;
-        const restoreEl = document.querySelector(selector);
-        if (restoreEl) {
-          restoreEl.focus();
-          if (selStart !== null && restoreEl.setSelectionRange) {
-            try { restoreEl.setSelectionRange(selStart, selStart); } catch (e) { /* ignore for number input */ }
-          }
-        }
       }
     }
 
@@ -1679,16 +1705,8 @@
       document.querySelectorAll(`[data-pinfall-id="${id}"]`).forEach(el => {
         if (el !== input) el.value = val;
       });
-      if (e.target.id === 'activePinfallInput') {
-        renderLiveTab();
-        const newInput = document.getElementById('activePinfallInput');
-        if (newInput) {
-          newInput.focus();
-          newInput.setSelectionRange(newInput.value.length, newInput.value.length);
-        }
-      } else {
-        renderSettlementTab();
-      }
+      refreshLiveComputedInPlace();
+      renderSettlementTab();
     });
 
     document.getElementById('resetCurrentGameBtn').addEventListener('click', () => {
