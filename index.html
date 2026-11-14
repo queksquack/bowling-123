@@ -337,8 +337,24 @@
     <!-- TAB 3: LIFETIME & TRENDS -->
     <section id="tab-history" class="hidden space-y-5">
 
+      <!-- Player Filter Bar -->
+      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 sm:p-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 class="text-sm font-semibold text-white">Lifetime Filter</h2>
+          <p class="text-xs text-slate-400">Filter stats, trends, and head-to-head rivalry by player.</p>
+        </div>
+        <select id="historyPlayerFilter" class="px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-xs sm:text-sm font-semibold text-white focus:outline-none focus:border-emerald-500">
+          <option value="">All Players</option>
+        </select>
+      </div>
+
       <!-- Summary KPI Strip -->
       <div id="historyKpis" class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <!-- Rendered dynamically -->
+      </div>
+
+      <!-- Player Rival & Matchups Card (Shown when filtering by a specific player) -->
+      <div id="playerRivalCard" class="hidden bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-3">
         <!-- Rendered dynamically -->
       </div>
 
@@ -564,6 +580,7 @@
         activeTab: 'live',
         selectedPlayerId: sess.roster[0] ? sess.roster[0].id : null,
         settleScope: 'session',
+        historyPlayerFilter: '',
         roomCode: '',
         currentSession: sess,
         sessionsHistory: []
@@ -1353,7 +1370,25 @@
       const allGames = sessions.flatMap(s =>
         (s.games || []).map(g => ({ ...g, sessionName: s.name, sessionNumber: s.sessionNumber }))
       );
+
+      // Populate player filter dropdown
+      const allUniqueNames = Array.from(new Set(
+        allGames.flatMap(g => (g.results || []).map(r => r.name.trim()))
+      )).sort((a, b) => a.localeCompare(b));
+      const filterSelect = document.getElementById('historyPlayerFilter');
+      if (filterSelect) {
+        const currentFilter = state.historyPlayerFilter || '';
+        filterSelect.innerHTML = [
+          `<option value="">All Players</option>`,
+          ...allUniqueNames.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`)
+        ].join('');
+        filterSelect.value = allUniqueNames.includes(currentFilter) ? currentFilter : '';
+        state.historyPlayerFilter = filterSelect.value;
+      }
+
+      const selectedName = state.historyPlayerFilter || '';
       const kpis = document.getElementById('historyKpis');
+      const rivalCard = document.getElementById('playerRivalCard');
 
       const playerMap = new Map();
       let totalStrikesAll = 0;
@@ -1393,26 +1428,118 @@
         });
       });
 
-      kpis.innerHTML = `
-        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5">
-          <p class="text-[11px] uppercase tracking-wider text-slate-400">Sessions / Games</p>
-          <p class="text-2xl font-extrabold text-white mt-1">${sessions.length} <span class="text-sm font-semibold text-slate-400">/ ${allGames.length}</span></p>
-        </div>
-        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5">
-          <p class="text-[11px] uppercase tracking-wider text-slate-400">Lifetime Strikes</p>
-          <p class="text-2xl font-extrabold text-emerald-400 mt-1">${totalStrikesAll}</p>
-        </div>
-        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5">
-          <p class="text-[11px] uppercase tracking-wider text-slate-400">Lifetime Pin 10s</p>
-          <p class="text-2xl font-extrabold text-amber-400 mt-1">${totalPin10All}</p>
-        </div>
-        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5">
-          <p class="text-[11px] uppercase tracking-wider text-slate-400">High Pinfall</p>
-          <p class="text-2xl font-extrabold text-sky-400 mt-1">${highestPinfallAll > 0 ? highestPinfallAll : '—'}</p>
-        </div>
-      `;
+      const selectedAgg = selectedName ? playerMap.get(selectedName) : null;
+      if (selectedName && selectedAgg) {
+        const avgPts = selectedAgg.games > 0 ? (selectedAgg.totalPts / selectedAgg.games).toFixed(1) : '0.0';
+        const avgPin = selectedAgg.pinfallCount > 0 ? (selectedAgg.totalPinfall / selectedAgg.pinfallCount).toFixed(1) : '—';
+        kpis.innerHTML = `
+          <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5">
+            <p class="text-[11px] uppercase tracking-wider text-slate-400">Games / Total Pts</p>
+            <p class="text-2xl font-extrabold text-white mt-1">${selectedAgg.games} <span class="text-sm font-semibold text-slate-400">/ ${selectedAgg.totalPts} pt</span></p>
+          </div>
+          <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5">
+            <p class="text-[11px] uppercase tracking-wider text-slate-400">Avg Pts / Avg Pinfall</p>
+            <p class="text-2xl font-extrabold text-sky-400 mt-1">${avgPts} <span class="text-sm font-semibold text-slate-400">/ ${avgPin}</span></p>
+          </div>
+          <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5">
+            <p class="text-[11px] uppercase tracking-wider text-slate-400">Strikes / Pin 10s</p>
+            <p class="text-2xl font-extrabold text-emerald-400 mt-1">${selectedAgg.strikes} <span class="text-sm font-semibold text-amber-400">/ ${selectedAgg.pin10}</span></p>
+          </div>
+          <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5">
+            <p class="text-[11px] uppercase tracking-wider text-slate-400">Lifetime Net ±</p>
+            <p class="text-2xl font-extrabold ${signedClass(selectedAgg.netDiff)} mt-1">${formatSigned(selectedAgg.netDiff)}</p>
+          </div>
+        `;
 
-      const leaderboard = Array.from(playerMap.values()).sort((a, b) => b.netDiff - a.netDiff || b.totalPts - a.totalPts);
+        // Compute Head-to-Head against every opponent to find Greatest Rival
+        const h2hMap = new Map();
+        allGames.forEach(g => {
+          const results = g.results || [];
+          const me = results.find(r => r.name.trim() === selectedName);
+          if (!me) return;
+          results.forEach(opp => {
+            const oppName = opp.name.trim();
+            if (oppName === selectedName) return;
+            if (!h2hMap.has(oppName)) {
+              h2hMap.set(oppName, { name: oppName, games: 0, net: 0, wins: 0, losses: 0, ties: 0 });
+            }
+            const rec = h2hMap.get(oppName);
+            const diff = me.totalPts - opp.totalPts;
+            rec.games += 1;
+            rec.net += diff;
+            if (diff > 0) rec.wins += 1;
+            else if (diff < 0) rec.losses += 1;
+            else rec.ties += 1;
+          });
+        });
+
+        const rivals = Array.from(h2hMap.values()).sort((a, b) => a.net - b.net || b.games - a.games);
+        if (rivalCard) {
+          rivalCard.classList.remove('hidden');
+          if (rivals.length === 0) {
+            rivalCard.innerHTML = `<p class="text-sm text-slate-400">No head-to-head opponents recorded for <strong>${escapeHtml(selectedName)}</strong> yet.</p>`;
+          } else {
+            const greatestRival = rivals[0];
+            const bestMatchup = [...rivals].sort((a, b) => b.net - a.net || b.games - a.games)[0];
+            rivalCard.innerHTML = `
+              <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
+                <div>
+                  <h3 class="text-sm font-semibold text-white">${escapeHtml(selectedName)}'s Rivalry Breakdown</h3>
+                  <p class="text-xs text-slate-400">Head-to-head ± across shared games.</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <div class="px-3 py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs">
+                    <span class="text-rose-300 font-semibold">Greatest Rival:</span>
+                    <strong class="text-white ml-1">${escapeHtml(greatestRival.name)}</strong>
+                    <span class="${signedClass(greatestRival.net)} font-bold ml-1">(${formatSigned(greatestRival.net)} in ${greatestRival.games}G)</span>
+                  </div>
+                  ${bestMatchup.name !== greatestRival.name ? `
+                    <div class="px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs">
+                      <span class="text-emerald-300 font-semibold">Best Matchup:</span>
+                      <strong class="text-white ml-1">${escapeHtml(bestMatchup.name)}</strong>
+                      <span class="${signedClass(bestMatchup.net)} font-bold ml-1">(${formatSigned(bestMatchup.net)})</span>
+                    </div>
+                  ` : ''}
+                </div>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                ${rivals.map(r => `
+                  <div class="flex items-center justify-between bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2 text-xs">
+                    <div>
+                      <span class="font-semibold text-white">vs ${escapeHtml(r.name)}</span>
+                      <span class="text-slate-400 ml-1.5">(${r.wins}W–${r.losses}L${r.ties ? `–${r.ties}T` : ''})</span>
+                    </div>
+                    <span class="font-bold ${signedClass(r.net)}">${formatSigned(r.net)}</span>
+                  </div>
+                `).join('')}
+              </div>
+            `;
+          }
+        }
+      } else {
+        if (rivalCard) rivalCard.classList.add('hidden');
+        kpis.innerHTML = `
+          <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5">
+            <p class="text-[11px] uppercase tracking-wider text-slate-400">Sessions / Games</p>
+            <p class="text-2xl font-extrabold text-white mt-1">${sessions.length} <span class="text-sm font-semibold text-slate-400">/ ${allGames.length}</span></p>
+          </div>
+          <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5">
+            <p class="text-[11px] uppercase tracking-wider text-slate-400">Lifetime Strikes</p>
+            <p class="text-2xl font-extrabold text-emerald-400 mt-1">${totalStrikesAll}</p>
+          </div>
+          <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5">
+            <p class="text-[11px] uppercase tracking-wider text-slate-400">Lifetime Pin 10s</p>
+            <p class="text-2xl font-extrabold text-amber-400 mt-1">${totalPin10All}</p>
+          </div>
+          <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5">
+            <p class="text-[11px] uppercase tracking-wider text-slate-400">High Pinfall</p>
+            <p class="text-2xl font-extrabold text-sky-400 mt-1">${highestPinfallAll > 0 ? highestPinfallAll : '—'}</p>
+          </div>
+        `;
+      }
+
+      const leaderboardAll = Array.from(playerMap.values()).sort((a, b) => b.netDiff - a.netDiff || b.totalPts - a.totalPts);
+      const leaderboard = selectedName ? leaderboardAll.filter(p => p.name === selectedName) : leaderboardAll;
       const tbody = document.getElementById('lifetimeTableBody');
       if (leaderboard.length === 0) {
         tbody.innerHTML = `<tr><td colspan="9" class="py-6 text-center text-slate-400">No saved sessions yet.</td></tr>`;
@@ -1440,7 +1567,12 @@
       if (sessions.length === 0) {
         list.innerHTML = `<p class="text-sm text-slate-400">Completed sessions and their games will appear here with full ± breakdowns.</p>`;
       } else {
-        list.innerHTML = [...sessions].reverse().map(s => {
+        const filteredSessions = selectedName
+          ? [...sessions].reverse().filter(s => (s.games || []).some(g => (g.results || []).some(r => r.name.trim() === selectedName)))
+          : [...sessions].reverse();
+        list.innerHTML = filteredSessions.length === 0
+          ? `<p class="text-sm text-slate-400">No saved sessions found for ${escapeHtml(selectedName)}.</p>`
+          : filteredSessions.map(s => {
           const dateStr = new Date(s.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
           const gamesHtml = (s.games || []).map(g => {
             const badges = [...(g.results || [])].sort((a, b) => b.totalPts - a.totalPts).map(r => `
@@ -1496,7 +1628,10 @@
 
       const metric = document.getElementById('trendMetricSelect').value;
       const labels = allGames.map(g => `S${g.sessionNumber}·G${g.gameNumber}`);
-      const allNames = Array.from(new Set(allGames.flatMap(g => (g.results || []).map(r => r.name.trim()))));
+      const selectedName = state.historyPlayerFilter || '';
+      const allNames = selectedName
+        ? [selectedName]
+        : Array.from(new Set(allGames.flatMap(g => (g.results || []).map(r => r.name.trim()))));
 
       const datasets = allNames.map((name, idx) => {
         let runningNet = 0;
@@ -2051,6 +2186,12 @@
     }
 
     // History Tab Listeners
+    document.getElementById('historyPlayerFilter').addEventListener('change', (e) => {
+      state.historyPlayerFilter = e.target.value;
+      saveState(false);
+      renderHistoryTab();
+    });
+
     document.getElementById('trendMetricSelect').addEventListener('change', () => {
       const allGames = (state.sessionsHistory || []).flatMap(s =>
         (s.games || []).map(g => ({ ...g, sessionName: s.name, sessionNumber: s.sessionNumber }))
