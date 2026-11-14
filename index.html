@@ -2274,11 +2274,20 @@
         currentUser = user;
         if (user && db) {
           try {
+            developerUid = '';
             try {
               const devSnap = await get(ref(db, 'config/developerUid'));
-              developerUid = devSnap.exists() && devSnap.val() ? String(devSnap.val()) : '';
-            } catch (devErr) {
-              developerUid = '';
+              if (devSnap.exists() && devSnap.val()) {
+                developerUid = String(devSnap.val()).trim();
+              }
+            } catch (devErr) { /* fallback to root developerUid */ }
+            if (!developerUid) {
+              try {
+                const rootDevSnap = await get(ref(db, 'developerUid'));
+                if (rootDevSnap.exists() && rootDevSnap.val()) {
+                  developerUid = String(rootDevSnap.val()).trim();
+                }
+              } catch (rootDevErr) { /* ignore */ }
             }
             const snap = await get(ref(db, `users/${user.uid}/playerName`));
             if (snap.exists() && snap.val()) {
