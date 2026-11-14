@@ -198,9 +198,6 @@
             <p class="text-xs text-slate-400">High Pinfall (+3 PT) updates automatically once game scores are entered.</p>
           </div>
           <div class="flex items-center gap-2">
-            <button id="resetCurrentGameBtn" type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700">
-              Reset Game Counts
-            </button>
             <button id="nextGameBtn" type="button" class="tap-btn px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold bg-sky-500 hover:bg-sky-400 text-slate-950">
               Next Game →
             </button>
@@ -339,7 +336,7 @@
             <h3 class="text-sm font-semibold text-white">Lifetime Leaderboard</h3>
             <p class="text-xs text-slate-400">Aggregated across all saved sessions &amp; games.</p>
           </div>
-          <div class="flex items-center gap-2">
+          <div id="historyAdminControls" class="hidden flex items-center gap-2">
             <button id="exportDataBtn" type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">
               Export JSON
             </button>
@@ -458,6 +455,12 @@
     let googleProvider = null;
     let currentUser = null;
     let fixedUserPlayerName = '';
+    let developerUid = '';
+
+    function isDeveloper() {
+      if (!currentUser) return !state.roomCode && !db;
+      return Boolean(developerUid && currentUser.uid === developerUid);
+    }
 
     try {
       const fbApp = initializeApp(firebaseConfig);
@@ -1027,11 +1030,7 @@
               <span>Game ${g.gameNumber}</span>
               <span class="px-1.5 py-0.5 rounded bg-slate-900/90 text-[10px] text-slate-300">${totalPtsInGame} pt</span>
             </button>
-            ${sess.games.length > 1 ? `
-              <button type="button" data-remove-game="${idx}" title="Remove Game ${g.gameNumber}" class="px-2 py-1.5 text-xs text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 border-l border-slate-800/80">
-                &times;
-              </button>
-            ` : ''}
+
           </div>
         `;
       }).join('');
@@ -1058,8 +1057,6 @@
 
       // Focused Phone Controller
       const isLocked = isViewingLockedGame();
-      const resetBtn = document.getElementById('resetCurrentGameBtn');
-      if (resetBtn) resetBtn.classList.toggle('hidden', isLocked);
       const activePlayer = computed.find(p => p.id === state.selectedPlayerId);
       const controller = document.getElementById('phoneControllerContainer');
 
@@ -1294,6 +1291,8 @@
     }
 
     function renderHistoryTab() {
+      const adminControls = document.getElementById('historyAdminControls');
+      if (adminControls) adminControls.classList.toggle('hidden', !isDeveloper());
       const sessions = state.sessionsHistory || [];
       const allGames = sessions.flatMap(s =>
         (s.games || []).map(g => ({ ...g, sessionName: s.name, sessionNumber: s.sessionNumber }))
@@ -1415,7 +1414,7 @@
                   <span class="px-2.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 text-xs font-bold">${escapeHtml(s.name)}</span>
                   <span class="text-xs text-slate-400">${(s.games || []).length} Game${(s.games || []).length > 1 ? 's' : ''} · ${escapeHtml(dateStr)}</span>
                 </div>
-                <button type="button" data-delete-session="${escapeHtml(s.id)}" class="text-xs text-rose-400 hover:text-rose-300">Delete</button>
+                ${isDeveloper() ? `<button type="button" data-delete-session="${escapeHtml(s.id)}" class="text-xs text-rose-400 hover:text-rose-300">Delete</button>` : ''}
               </div>
               <div class="space-y-3">${gamesHtml}</div>
             </div>
@@ -1685,23 +1684,6 @@
         return;
       }
 
-      const removeGameBtn = e.target.closest('[data-remove-game]');
-      if (removeGameBtn) {
-        const idx = Number(removeGameBtn.dataset.removeGame);
-        if (state.currentSession.games.length <= 1) return;
-        const gNum = state.currentSession.games[idx].gameNumber;
-        openConfirm(`Remove Game ${gNum}?`, `Delete Game ${gNum} from ${state.currentSession.name}?`, () => {
-          state.currentSession.games.splice(idx, 1);
-          if (state.currentSession.activeGameIndex >= state.currentSession.games.length) {
-            state.currentSession.activeGameIndex = state.currentSession.games.length - 1;
-          }
-          saveState(true);
-          renderAll();
-          showToast(`Removed Game ${gNum}`);
-        });
-        return;
-      }
-
       const selectBtn = e.target.closest('[data-select-player]');
       if (selectBtn) {
         state.selectedPlayerId = selectBtn.dataset.selectPlayer;
@@ -1799,23 +1781,15 @@
       renderSettlementTab();
     });
 
-    document.getElementById('resetCurrentGameBtn').addEventListener('click', () => {
-      if (isViewingLockedGame()) {
-        showToast('Previous games are locked and cannot be reset.');
-        return;
-      }
-      const activeGame = getActiveGame();
-      openConfirm(
-        `Reset Game ${activeGame.gameNumber}?`,
-        `Clear all strikes, Pin 10 leaves, and game scores for Game ${activeGame.gameNumber}?`,
-        () => {
-          activeGame.players = activeGame.players.map(p => ({ ...p, strikes: 0, pin10: 0, pinfall: '' }));
-          saveState(true);
-          renderAll();
-          showToast(`Game ${activeGame.gameNumber} counts reset`);
-        }
+    function isGameBlank(game) {
+      const players = game && Array.isArray(game.players) ? game.players : [];
+      if (players.length === 0) return true;
+      return players.every(p =>
+        (Number(p.strikes) || 0) === 0 &&
+        (Number(p.pin10) || 0) === 0 &&
+        (p.pinfall === '' || p.pinfall === null || p.pinfall === undefined)
       );
-    });
+    }
 
     document.getElementById('finishSessionBtn').addEventListener('click', () => {
       const sess = state.currentSession;
@@ -1823,12 +1797,19 @@
         showToast('Add at least 2 players to save a session.');
         return;
       }
-      const incompleteGames = (sess.games || []).filter(g =>
+      const playedGames = (sess.games || []).filter(g => !isGameBlank(g));
+      if (playedGames.length === 0) {
+        showToast('No played games to save yet.');
+        return;
+      }
+      const skippedCount = (sess.games || []).length - playedGames.length;
+      const incompleteGames = playedGames.filter(g =>
         (g.players || []).some(p => p.pinfall === '' || p.pinfall === null || p.pinfall === undefined || isNaN(Number(p.pinfall)))
       );
+      const skippedNote = skippedCount > 0 ? ` (${skippedCount} blank game ignored)` : '';
       const confirmMsg = incompleteGames.length > 0
-        ? `Warning: ${incompleteGames.length} game(s) still have missing Final Game Scores. Commit ${sess.name} (${sess.games.length} game(s)) to Lifetime History${state.roomCode ? ' and close the room' : ''} anyway?`
-        : `Commit all ${sess.games.length} game(s) in ${sess.name} to Lifetime History & Trends${state.roomCode ? ' and close the room' : ''}?`;
+        ? `Warning: ${incompleteGames.length} game(s) still have missing Final Game Scores. Commit ${sess.name} (${playedGames.length} game(s)${skippedNote}) to Lifetime History${state.roomCode ? ' and close the room' : ''} anyway?`
+        : `Commit ${playedGames.length} played game(s)${skippedNote} in ${sess.name} to Lifetime History & Trends${state.roomCode ? ' and close the room' : ''}?`;
       openConfirm(
         `Confirm Final Commit — ${sess.name}`,
         confirmMsg,
@@ -1838,7 +1819,7 @@
             sessionNumber: sess.sessionNumber,
             name: sess.name,
             timestamp: Date.now(),
-            games: sess.games.map(g => ({
+            games: playedGames.map(g => ({
               gameNumber: g.gameNumber,
               results: computeGameMetrics(g.players).map(p => ({
                 name: p.name,
@@ -1927,6 +1908,10 @@
     document.getElementById('loggedGamesList').addEventListener('click', (e) => {
       const delBtn = e.target.closest('[data-delete-session]');
       if (!delBtn) return;
+      if (!isDeveloper()) {
+        showToast('Developer access required.');
+        return;
+      }
       const sid = delBtn.dataset.deleteSession;
       openConfirm('Delete Saved Session?', 'Remove this session and all its games from lifetime history?', () => {
         state.sessionsHistory = state.sessionsHistory.filter(s => s.id !== sid);
@@ -1937,6 +1922,10 @@
     });
 
     document.getElementById('clearHistoryBtn').addEventListener('click', () => {
+      if (!isDeveloper()) {
+        showToast('Developer access required.');
+        return;
+      }
       if (state.sessionsHistory.length === 0) return;
       openConfirm('Clear All Lifetime History?', 'This will permanently erase all saved sessions and trends.', () => {
         state.sessionsHistory = [];
@@ -1949,6 +1938,10 @@
     });
 
     document.getElementById('exportDataBtn').addEventListener('click', () => {
+      if (!isDeveloper()) {
+        showToast('Developer access required.');
+        return;
+      }
       const blob = new Blob([JSON.stringify({ sessionsHistory: state.sessionsHistory, exportedAt: new Date().toISOString() }, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -1962,6 +1955,11 @@
     });
 
     document.getElementById('importDataInput').addEventListener('change', (e) => {
+      if (!isDeveloper()) {
+        showToast('Developer access required.');
+        e.target.value = '';
+        return;
+      }
       const file = e.target.files[0];
       if (!file) return;
       const reader = new FileReader();
@@ -2144,6 +2142,12 @@
         currentUser = user;
         if (user && db) {
           try {
+            try {
+              const devSnap = await get(ref(db, 'config/developerUid'));
+              developerUid = devSnap.exists() && devSnap.val() ? String(devSnap.val()) : '';
+            } catch (devErr) {
+              developerUid = '';
+            }
             const snap = await get(ref(db, `users/${user.uid}/playerName`));
             if (snap.exists() && snap.val()) {
               fixedUserPlayerName = String(snap.val());
@@ -2164,6 +2168,7 @@
           }
         } else {
           fixedUserPlayerName = '';
+          developerUid = '';
           renderAuthUI();
         }
         renderAll();
