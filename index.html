@@ -673,17 +673,29 @@
       sess.games = Array.isArray(sess.games) && sess.games.length > 0
         ? sess.games.map(g => ({ ...g, players: Array.isArray(g.players) ? g.players : [] }))
         : [{ gameNumber: 1, players: makeEmptyRosterPlayers(sess.roster) }];
+      const activeIdx = (typeof sess.activeGameIndex === 'number' && sess.activeGameIndex >= 0 && sess.activeGameIndex < sess.games.length)
+        ? sess.activeGameIndex
+        : sess.games.length - 1;
 
       const existingById = fixedId ? sess.roster.find(p => p.id === fixedId) : null;
       const existingByName = sess.roster.find(p => p.name.trim().toLowerCase() === playerName.trim().toLowerCase());
       const existing = existingById || existingByName;
       if (existing) {
-        return { sess, playerId: existing.id, added: false };
+        let addedToGame = false;
+        sess.games.forEach((g, idx) => {
+          if (idx >= activeIdx && !g.players.some(gp => gp.id === existing.id)) {
+            g.players.push({ id: existing.id, name: existing.name, strikes: 0, pin10: 0, pinfall: '' });
+            addedToGame = true;
+          }
+        });
+        return { sess, playerId: existing.id, added: addedToGame };
       }
       const id = fixedId || ('p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6));
       sess.roster.push({ id, name: playerName });
-      sess.games.forEach(g => {
-        g.players.push({ id, name: playerName, strikes: 0, pin10: 0, pinfall: '' });
+      sess.games.forEach((g, idx) => {
+        if (idx >= activeIdx) {
+          g.players.push({ id, name: playerName, strikes: 0, pin10: 0, pinfall: '' });
+        }
       });
       return { sess, playerId: id, added: true };
     }
@@ -889,6 +901,22 @@
       });
 
       return Array.from(map.values());
+    }
+
+    function computeSessionHeadToHead(session) {
+      const h2h = {};
+      (session.games || []).forEach(g => {
+        const gm = computeGameMetrics(g.players);
+        gm.forEach(rowP => {
+          if (!h2h[rowP.id]) h2h[rowP.id] = {};
+          gm.forEach(colP => {
+            if (rowP.id === colP.id) return;
+            if (h2h[rowP.id][colP.id] === undefined) h2h[rowP.id][colP.id] = 0;
+            h2h[rowP.id][colP.id] += (rowP.totalPts - colP.totalPts);
+          });
+        });
+      });
+      return h2h;
     }
 
     function getActiveGame() {
@@ -1216,10 +1244,18 @@
         return;
       }
       const headerCells = rows.map(c => `<th class="py-2.5 px-3 text-slate-300 font-semibold">${escapeHtml(c.name)}</th>`).join('');
+      const sessionH2H = state.settleScope === 'session' ? computeSessionHeadToHead(sess) : null;
       const bodyRows = rows.map(rowP => {
         const cells = rows.map(colP => {
           if (rowP.id === colP.id) {
             return `<td class="py-2.5 px-3 text-slate-600 bg-slate-950/40">—</td>`;
+          }
+          if (sessionH2H) {
+            const val = sessionH2H[rowP.id] ? sessionH2H[rowP.id][colP.id] : undefined;
+            if (val === undefined) {
+              return `<td class="py-2.5 px-3 text-slate-600">—</td>`;
+            }
+            return `<td class="py-2.5 px-3 font-bold ${signedClass(val)}">${formatSigned(val)}</td>`;
           }
           const diff = rowP.totalPts - colP.totalPts;
           return `<td class="py-2.5 px-3 font-bold ${signedClass(diff)}">${formatSigned(diff)}</td>`;
@@ -1570,15 +1606,34 @@
 
     function addNewGameToSession() {
       const sess = state.currentSession;
+      if (sess.roster.length === 0) {
+        showToast('Add at least one player before starting the next game.');
+        return;
+      }
+      const activeGame = getActiveGame();
+      const missingPlayers = (activeGame.players || []).filter(
+        p => p.pinfall === '' || p.pinfall === null || p.pinfall === undefined || isNaN(Number(p.pinfall))
+      );
+      if (missingPlayers.length > 0) {
+        const names = missingPlayers.map(p => p.name).join(', ');
+        showToast(`Enter Final Game Score for all players in Game ${activeGame.gameNumber} first (missing: ${names}).`);
+        return;
+      }
       const nextNum = sess.games.length > 0 ? Math.max(...sess.games.map(g => g.gameNumber)) + 1 : 1;
-      sess.games.push({
-        gameNumber: nextNum,
-        players: makeEmptyRosterPlayers(sess.roster)
-      });
-      sess.activeGameIndex = sess.games.length - 1;
-      saveState(true);
-      renderAll();
-      showToast(`Started Game ${nextNum} in ${sess.name}`);
+      openConfirm(
+        `Start Game ${nextNum}?`,
+        `All scores for Game ${activeGame.gameNumber} are entered. Ready to lock Game ${activeGame.gameNumber} and start Game ${nextNum}?`,
+        () => {
+          sess.games.push({
+            gameNumber: nextNum,
+            players: makeEmptyRosterPlayers(sess.roster)
+          });
+          sess.activeGameIndex = sess.games.length - 1;
+          saveState(true);
+          renderAll();
+          showToast(`Started Game ${nextNum} in ${sess.name}`);
+        }
+      );
     }
 
     document.getElementById('addGameBtn').addEventListener('click', addNewGameToSession);
@@ -1589,10 +1644,17 @@
       const input = document.getElementById('newPlayerInput');
       const name = input.value.trim();
       if (!name) return;
-      const id = 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
-      state.currentSession.roster.push({ id, name });
-      state.currentSession.games.forEach(g => {
-        g.players.push({ id, name, strikes: 0, pin10: 0, pinfall: '' });
+      const sess = state.currentSession;
+      const activeIdx = sess.activeGameIndex || 0;
+      const existingRoster = sess.roster.find(p => p.name.trim().toLowerCase() === name.toLowerCase());
+      const id = existingRoster ? existingRoster.id : ('p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6));
+      if (!existingRoster) {
+        sess.roster.push({ id, name });
+      }
+      sess.games.forEach((g, idx) => {
+        if (idx >= activeIdx && !g.players.some(gp => gp.id === id)) {
+          g.players.push({ id, name: existingRoster ? existingRoster.name : name, strikes: 0, pin10: 0, pinfall: '' });
+        }
       });
       state.selectedPlayerId = id;
       setRememberedName(name);
@@ -1642,16 +1704,20 @@
       if (removeBtn) {
         const id = removeBtn.dataset.removePlayer;
         const sess = state.currentSession;
-        const p = sess.roster.find(x => x.id === id);
-        if (!p || sess.roster.length <= 1) return;
+        const activeIdx = sess.activeGameIndex || 0;
+        const activeGame = getActiveGame();
+        const p = (activeGame.players || []).find(x => x.id === id) || sess.roster.find(x => x.id === id);
+        if (!p || (activeGame.players || []).length <= 1) return;
         sess.roster = sess.roster.filter(x => x.id !== id);
-        sess.games.forEach(g => {
-          g.players = g.players.filter(x => x.id !== id);
+        sess.games.forEach((g, idx) => {
+          if (idx >= activeIdx) {
+            g.players = (g.players || []).filter(x => x.id !== id);
+          }
         });
-        state.selectedPlayerId = sess.roster[0].id;
+        state.selectedPlayerId = activeGame.players[0] ? activeGame.players[0].id : (sess.roster[0] ? sess.roster[0].id : null);
         saveState(true);
         renderAll();
-        showToast(`Removed ${p.name} from session`);
+        showToast(`Removed ${p.name} from Game ${activeGame.gameNumber} onward (earlier games preserved)`);
         return;
       }
 
@@ -1729,9 +1795,15 @@
         showToast('Add at least 2 players to save a session.');
         return;
       }
+      const incompleteGames = (sess.games || []).filter(g =>
+        (g.players || []).some(p => p.pinfall === '' || p.pinfall === null || p.pinfall === undefined || isNaN(Number(p.pinfall)))
+      );
+      const confirmMsg = incompleteGames.length > 0
+        ? `Warning: ${incompleteGames.length} game(s) still have missing Final Game Scores. Commit ${sess.name} (${sess.games.length} game(s)) to Lifetime History${state.roomCode ? ' and close the room' : ''} anyway?`
+        : `Commit all ${sess.games.length} game(s) in ${sess.name} to Lifetime History & Trends${state.roomCode ? ' and close the room' : ''}?`;
       openConfirm(
-        `Save ${sess.name} to Lifetime?`,
-        `Log all ${sess.games.length} game(s) in ${sess.name} to Lifetime History & Trends and start a new session?`,
+        `Confirm Final Commit — ${sess.name}`,
+        confirmMsg,
         () => {
           const archivedSession = {
             id: sess.id,
