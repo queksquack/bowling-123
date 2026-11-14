@@ -146,6 +146,32 @@
     <!-- TAB 1: LIVE SESSION -->
     <section id="tab-live" class="space-y-5">
 
+      <!-- Signed-In No-Room Prompt -->
+      <div id="joinRoomPromptCard" class="hidden bg-slate-900/90 border border-slate-800 rounded-2xl p-8 text-center space-y-2">
+        <div class="text-2xl" aria-hidden="true">🎳</div>
+        <h2 class="text-base font-bold text-white">Join a Room</h2>
+        <p class="text-xs sm:text-sm text-slate-400 max-w-md mx-auto">
+          Enter a room code above and tap <strong class="text-emerald-400">Connect</strong>, or tap <strong class="text-slate-200">New Code</strong> to start a fresh live session.
+        </p>
+      </div>
+
+      <!-- Developer-Only Active Rooms Panel -->
+      <div id="devRoomsPanel" class="hidden bg-slate-900/90 border border-amber-500/30 rounded-2xl p-4 space-y-3">
+        <div class="flex items-center justify-between gap-2">
+          <div>
+            <h3 class="text-sm font-semibold text-amber-300">Developer: Active Cloud Rooms</h3>
+            <p class="text-xs text-slate-400">View, join, or clean up leftover rooms in Firebase.</p>
+          </div>
+          <button id="refreshDevRoomsBtn" type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">
+            Refresh
+          </button>
+        </div>
+        <div id="devRoomsList" class="space-y-2 text-xs text-slate-300">
+          <p class="text-slate-500">Click Refresh to load active rooms.</p>
+        </div>
+      </div>
+
+      <div id="liveSessionWorkspace" class="space-y-5">
       <!-- Session & Multi-Game Switcher Bar -->
       <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 space-y-3">
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -257,11 +283,17 @@
           Save Session to Lifetime &amp; Close Room
         </button>
       </div>
+      </div><!-- /liveSessionWorkspace -->
 
     </section>
 
     <!-- TAB 2: SETTLEMENT (±) -->
     <section id="tab-settlement" class="hidden space-y-5">
+      <div id="settleNoRoomCard" class="hidden bg-slate-900/90 border border-slate-800 rounded-2xl p-8 text-center space-y-2">
+        <h2 class="text-base font-bold text-white">Join a Room</h2>
+        <p class="text-xs sm:text-sm text-slate-400">Connect to a live room in the <strong class="text-emerald-400">Live Session</strong> tab to view ± settlement.</p>
+      </div>
+      <div id="settleWorkspace" class="space-y-5">
       <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -296,6 +328,7 @@
           </table>
         </div>
       </div>
+      </div><!-- /settleWorkspace -->
     </section>
 
     <!-- TAB 3: LIFETIME & TRENDS -->
@@ -1008,6 +1041,17 @@
     }
 
     function renderLiveTab() {
+      const needsRoom = Boolean(currentUser && !state.roomCode);
+      const joinCard = document.getElementById('joinRoomPromptCard');
+      const liveWs = document.getElementById('liveSessionWorkspace');
+      if (joinCard) joinCard.classList.toggle('hidden', !needsRoom);
+      if (liveWs) liveWs.classList.toggle('hidden', needsRoom);
+
+      const devPanel = document.getElementById('devRoomsPanel');
+      if (devPanel) devPanel.classList.toggle('hidden', !isDeveloper());
+
+      if (needsRoom) return;
+
       const sess = state.currentSession;
       const activeGame = getActiveGame();
       const computed = computeGameMetrics(activeGame.players);
@@ -1195,6 +1239,13 @@
     }
 
     function renderSettlementTab() {
+      const needsRoom = Boolean(currentUser && !state.roomCode);
+      const settleNoRoom = document.getElementById('settleNoRoomCard');
+      const settleWs = document.getElementById('settleWorkspace');
+      if (settleNoRoom) settleNoRoom.classList.toggle('hidden', !needsRoom);
+      if (settleWs) settleWs.classList.toggle('hidden', needsRoom);
+      if (needsRoom) return;
+
       const sess = state.currentSession;
       const scopeSelect = document.getElementById('settleScopeSelect');
 
@@ -1576,12 +1627,93 @@
     });
 
     document.getElementById('newRoomBtn').addEventListener('click', () => {
+      if (!currentUser) {
+        showToast('Please sign in with Google first to create a live room.');
+        return;
+      }
       const code = Math.random().toString(36).substring(2, 7).toUpperCase();
+      state.currentSession = defaultSession(1);
+      state.selectedPlayerId = null;
+      state.settleScope = 'session';
       document.getElementById('roomCodeInput').value = code;
       connectToRoom(code);
     });
 
-    document.getElementById('disconnectRoomBtn').addEventListener('click', disconnectRoom);
+    document.getElementById('disconnectRoomBtn').addEventListener('click', () => {
+      disconnectRoom();
+      renderAll();
+    });
+
+    async function loadDeveloperRooms() {
+      const listEl = document.getElementById('devRoomsList');
+      if (!listEl || !db || !isDeveloper()) return;
+      listEl.innerHTML = `<p class="text-slate-400">Loading rooms...</p>`;
+      try {
+        const snap = await get(ref(db, 'rooms'));
+        if (!snap.exists()) {
+          listEl.innerHTML = `<p class="text-slate-500">No active rooms in database.</p>`;
+          return;
+        }
+        const rooms = snap.val();
+        const entries = Object.entries(rooms || {});
+        if (entries.length === 0) {
+          listEl.innerHTML = `<p class="text-slate-500">No active rooms in database.</p>`;
+          return;
+        }
+        listEl.innerHTML = entries.map(([code, data]) => {
+          const sess = (data && data.currentSession) ? data.currentSession : {};
+          const sessName = sess.name || 'Untitled';
+          const gameCount = Array.isArray(sess.games) ? sess.games.length : 0;
+          const playerCount = Array.isArray(sess.roster) ? sess.roster.length : 0;
+          const isCurrent = state.roomCode === code;
+          return `
+            <div class="flex flex-wrap items-center justify-between gap-2 bg-slate-950/70 border border-slate-800 rounded-xl px-3 py-2">
+              <div class="min-w-0">
+                <span class="font-bold text-white tracking-wider">${escapeHtml(code)}</span>
+                <span class="text-slate-400 ml-2">${escapeHtml(sessName)} · ${playerCount} player(s) · ${gameCount} game(s)</span>
+              </div>
+              <div class="flex items-center gap-2 shrink-0">
+                <button type="button" data-dev-join-room="${escapeHtml(code)}" ${isCurrent ? 'disabled' : ''}
+                  class="px-2.5 py-1 rounded-lg text-xs font-semibold ${isCurrent ? 'bg-emerald-500/20 text-emerald-300 cursor-default' : 'bg-sky-500/20 hover:bg-sky-500/30 text-sky-300'}">
+                  ${isCurrent ? 'Active' : 'Join'}
+                </button>
+                <button type="button" data-dev-delete-room="${escapeHtml(code)}"
+                  class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-rose-500/15 hover:bg-rose-500/25 text-rose-300">
+                  Delete
+                </button>
+              </div>
+            </div>
+          `;
+        }).join('');
+      } catch (err) {
+        listEl.innerHTML = `<p class="text-rose-300">Unable to list rooms (add developer .read rule on /rooms in Firebase).</p>`;
+      }
+    }
+
+    document.getElementById('refreshDevRoomsBtn').addEventListener('click', loadDeveloperRooms);
+
+    document.getElementById('devRoomsList').addEventListener('click', (e) => {
+      if (!isDeveloper()) return;
+      const joinBtn = e.target.closest('[data-dev-join-room]');
+      if (joinBtn) {
+        connectToRoom(joinBtn.dataset.devJoinRoom);
+        return;
+      }
+      const delBtn = e.target.closest('[data-dev-delete-room]');
+      if (delBtn) {
+        const code = delBtn.dataset.devDeleteRoom;
+        openConfirm(`Delete Room ${code}?`, `Permanently delete room ${code} from Firebase Realtime Database?`, () => {
+          set(ref(db, `rooms/${code}`), null).then(() => {
+            if (state.roomCode === code) {
+              disconnectRoom();
+              renderAll();
+            }
+            loadDeveloperRooms();
+            showToast(`Deleted room ${code}`);
+          }).catch(handleFirebaseWriteError);
+        });
+      }
+    });
 
     document.getElementById('copyRoomLinkBtn').addEventListener('click', () => {
       const code = state.roomCode || document.getElementById('roomCodeInput').value.trim().toUpperCase();
@@ -2160,6 +2292,9 @@
             fixedUserPlayerName = user.displayName || getRememberedName() || 'Bowler';
           }
           renderAuthUI();
+          if (isDeveloper()) {
+            loadDeveloperRooms();
+          }
           const urlRoom = new URLSearchParams(window.location.search).get('room');
           if (urlRoom) {
             connectToRoom(urlRoom);
